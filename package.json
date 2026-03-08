@@ -61,6 +61,7 @@
     "npm": ">=9.0.0"
   },
   "publishConfig": {
-    "provenance": true
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
   }
 }
