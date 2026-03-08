@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('../src/api.js', () => ({
   CloudflareApi: {
     configure: vi.fn(),
+    listZones: vi.fn(),
     listDnsRecords: vi.fn(),
     findDnsRecords: vi.fn(),
     getDnsRecord: vi.fn(),
@@ -130,6 +131,47 @@ describe('MCP server tool handlers', () => {
         recordId: VALID_ID, content: 'updated content',
       }));
       expect(text).toContain('[EXTERNAL DATA: updated content]');
+    });
+  });
+
+  // ── list_zones ────────────────────────────────────────────────────────────
+
+  describe('list_zones', () => {
+    const validZone = { id: 'zone123', name: 'example.com', status: 'active', paused: false };
+
+    it('returns a list of zones with names and IDs', async () => {
+      vi.mocked(CloudflareApi.listZones).mockResolvedValueOnce([validZone]);
+      const result = await callTool(server, 'list_zones', {});
+      assertSuccessResponse(result);
+      const text = getText(result);
+      expect(text).toContain('zone123');
+      expect(text).toContain('active');
+    });
+
+    it('wraps zone name with [EXTERNAL DATA: ...] to prevent injection', async () => {
+      vi.mocked(CloudflareApi.listZones).mockResolvedValueOnce([validZone]);
+      const text = getText(await callTool(server, 'list_zones', {}));
+      expect(text).toContain('[EXTERNAL DATA: example.com]');
+    });
+
+    it('returns a no-zones message when result is empty', async () => {
+      vi.mocked(CloudflareApi.listZones).mockResolvedValueOnce([]);
+      const result = await callTool(server, 'list_zones', {});
+      assertSuccessResponse(result);
+      expect(getText(result)).toContain('No zones found');
+    });
+
+    it('includes paused indicator for paused zones', async () => {
+      vi.mocked(CloudflareApi.listZones).mockResolvedValueOnce([{ ...validZone, paused: true }]);
+      const text = getText(await callTool(server, 'list_zones', {}));
+      expect(text).toContain('paused');
+    });
+
+    it('returns isError: true when API throws', async () => {
+      vi.mocked(CloudflareApi.listZones).mockRejectedValueOnce(new Error('API down'));
+      const result = await callTool(server, 'list_zones', {});
+      assertErrorResponse(result);
+      expect(getText(result)).toContain('Error listing zones');
     });
   });
 

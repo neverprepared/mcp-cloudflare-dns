@@ -428,6 +428,53 @@ describe('CloudflareApi', () => {
     });
   });
 
+  // ── listZones ─────────────────────────────────────────────────────────────
+
+  describe('listZones', () => {
+    const zonesBody = {
+      success: true,
+      errors: [],
+      messages: [],
+      result: [{ id: 'zone123', name: 'example.com', status: 'active', paused: false }],
+    };
+
+    it('calls the /zones endpoint (not zone-scoped)', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(zonesBody));
+      await CloudflareApi.listZones();
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toMatch(/\/v4\/zones$/);
+      expect(url).not.toContain('test-zone-id');
+    });
+
+    it('returns an array of zones', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(zonesBody));
+      const zones = await CloudflareApi.listZones();
+      expect(zones).toHaveLength(1);
+      expect(zones[0].name).toBe('example.com');
+      expect(zones[0].id).toBe('zone123');
+    });
+
+    it('returns empty array when result is null', async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({ success: true, errors: [], messages: [], result: null }),
+      );
+      const zones = await CloudflareApi.listZones();
+      expect(zones).toEqual([]);
+    });
+
+    it('throws sanitized error when API returns success: false', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(failureBody));
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      expect(err.message).toContain('code 9109');
+      expect(err.message).not.toContain('internal secret detail');
+    });
+
+    it('throws when fetch fails', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('network error'));
+      await expect(CloudflareApi.listZones()).rejects.toThrow();
+    });
+  });
+
   // ── configure / credential handling ──────────────────────────────────────
 
   describe('configure', () => {
