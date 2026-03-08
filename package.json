@@ -1,7 +1,7 @@
 {
   "name": "@neverprepared/mcp-cloudflare-dns",
   "description": "A Model Context Protocol server implementation for Cloudflare DNS that enables AI agents to manage DNS records for your domains",
-  "version": "1.6.0",
+  "version": "1.0.0",
   "author": "neverprepared",
   "contributors": [
     {
