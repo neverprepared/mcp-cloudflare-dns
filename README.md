@@ -2,13 +2,16 @@
 
 A Model Context Protocol server implementation for Cloudflare DNS that enables AI agents to manage DNS records for your domains.
 
+> **Fork of [gilberth/mcp-cloudflare](https://github.com/gilberth/mcp-cloudflare)** by [TheLord](https://github.com/gilberth).
+> Original work is credited and this fork is distributed under the same MIT license.
+
 ## Features
 
-- 🔍 **List DNS records** - View all or filtered DNS records
-- 📝 **Create DNS records** - Add new A, AAAA, CNAME, MX, TXT, and other record types  
-- ✏️ **Update DNS records** - Modify existing records
-- 🗑️ **Delete DNS records** - Remove unwanted records
-- 🔧 **Full Cloudflare API support** - Supports proxying, TTL, priority settings
+- **List DNS records** - View all or filtered DNS records
+- **Create DNS records** - Add new A, AAAA, CNAME, MX, TXT, and other record types
+- **Update DNS records** - Modify existing records
+- **Delete DNS records** - Remove unwanted records
+- **Full Cloudflare API support** - Supports proxying, TTL, priority settings
 
 ## Setup
 
@@ -16,27 +19,17 @@ A Model Context Protocol server implementation for Cloudflare DNS that enables A
 
 1. Go to [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens)
 2. Click "Create Token"
-3. Use "Zone:Edit" template or create custom token with:
+3. Use the "Zone:Edit" template or create a custom token with:
    - Zone:Read
    - Zone:Edit
 4. Copy your API token
 
 ### 2. Get Zone ID
 
-1. Go to your domain in Cloudflare Dashboard
+1. Go to your domain in the Cloudflare Dashboard
 2. Copy the Zone ID from the right sidebar
 
 ## Usage
-
-### With Smithery (Cloud)
-
-Deploy directly to Smithery for hosted access.
-
-### With npx (Local)
-
-```bash
-npx -y @thelord/mcp-cloudflare
-```
 
 ### Environment Variables
 
@@ -45,7 +38,7 @@ Create a `.env` file:
 ```env
 CLOUDFLARE_API_TOKEN=your-api-token-here
 CLOUDFLARE_ZONE_ID=your-zone-id-here
-CLOUDFLARE_EMAIL=your-email@example.com  # Optional
+CLOUDFLARE_EMAIL=your-email@example.com  # Optional, only for legacy API keys
 ```
 
 ### Claude Desktop Configuration
@@ -55,7 +48,7 @@ CLOUDFLARE_EMAIL=your-email@example.com  # Optional
   "mcpServers": {
     "cloudflare": {
       "command": "npx",
-      "args": ["-y", "@thelord/mcp-cloudflare"],
+      "args": ["-y", "@mindmorass/mcp-cloudflare"],
       "env": {
         "CLOUDFLARE_API_TOKEN": "your-api-token",
         "CLOUDFLARE_ZONE_ID": "your-zone-id"
@@ -65,13 +58,19 @@ CLOUDFLARE_EMAIL=your-email@example.com  # Optional
 }
 ```
 
+### Run locally
+
+```bash
+npx -y @mindmorass/mcp-cloudflare
+```
+
 ## Available Tools
 
 ### `list_dns_records`
 List all DNS records or filter by name/type.
 
 ### `get_dns_record`
-Get detailed information about a specific DNS record.
+Get detailed information about a specific DNS record by ID.
 
 ### `create_dns_record`
 Create a new DNS record with specified type, name, and content.
@@ -85,7 +84,7 @@ Delete a DNS record by ID.
 ## Supported DNS Record Types
 
 - A (IPv4 address)
-- AAAA (IPv6 address)  
+- AAAA (IPv6 address)
 - CNAME (Canonical name)
 - MX (Mail exchange)
 - TXT (Text)
@@ -97,9 +96,14 @@ Delete a DNS record by ID.
 ## Security
 
 - API tokens are never logged or exposed
+- DNS record content is treated as untrusted external data to guard against prompt injection
+- Record IDs are validated against Cloudflare's expected format before use
+- API error details are sanitized before being returned to the calling agent
 - Uses official Cloudflare API with secure authentication
 - Supports scoped API tokens for minimal permissions
 
 ## License
 
-MIT# mcp-cloudflare
+MIT — see [LICENSE](./LICENSE).
+
+Original work copyright TheLord ([gilberth/mcp-cloudflare](https://github.com/gilberth/mcp-cloudflare)).

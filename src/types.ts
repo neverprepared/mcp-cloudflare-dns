@@ -1,9 +1,7 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 // Cloudflare DNS Record types
-export const DnsRecordType = z.enum([
-  "A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "CAA", "PTR"
-]);
+export const DnsRecordType = z.enum(['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR']);
 
 export const CloudflareDnsRecord = z.object({
   id: z.string(),
@@ -17,34 +15,38 @@ export const CloudflareDnsRecord = z.object({
   priority: z.number().optional(),
   created_on: z.string(),
   modified_on: z.string(),
-  meta: z.object({
-    auto_added: z.boolean().optional(),
-    managed_by_apps: z.boolean().optional(),
-    managed_by_argo_tunnel: z.boolean().optional(),
-  }).optional(),
+  meta: z
+    .object({
+      auto_added: z.boolean().optional(),
+      managed_by_apps: z.boolean().optional(),
+      managed_by_argo_tunnel: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const CloudflareApiResponse = z.object({
   success: z.boolean(),
-  errors: z.array(z.object({
-    code: z.number(),
-    message: z.string(),
-  })),
-  messages: z.array(z.object({
-    code: z.number(),
-    message: z.string(),
-  })),
-  result: z.union([
-    z.array(CloudflareDnsRecord),
-    CloudflareDnsRecord,
-    z.null(),
-  ]).optional(),
-  result_info: z.object({
-    page: z.number(),
-    per_page: z.number(),
-    count: z.number(),
-    total_count: z.number(),
-  }).optional(),
+  errors: z.array(
+    z.object({
+      code: z.number(),
+      message: z.string(),
+    }),
+  ),
+  messages: z.array(
+    z.object({
+      code: z.number(),
+      message: z.string(),
+    }),
+  ),
+  result: z.union([z.array(CloudflareDnsRecord), CloudflareDnsRecord, z.null()]).optional(),
+  result_info: z
+    .object({
+      page: z.number(),
+      per_page: z.number(),
+      count: z.number(),
+      total_count: z.number(),
+    })
+    .optional(),
 });
 
 export const CreateDnsRecordRequest = z.object({

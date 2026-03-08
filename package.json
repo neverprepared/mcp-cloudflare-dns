@@ -1,22 +1,34 @@
 {
-  "name": "@thelord/mcp-cloudflare",
+  "name": "@mindmorass/mcp-cloudflare",
   "description": "A Model Context Protocol server implementation for Cloudflare DNS that enables AI agents to manage DNS records for your domains",
   "version": "1.6.0",
-  "author": "TheLord",
+  "author": "mindmorass",
+  "contributors": [
+    {
+      "name": "TheLord",
+      "url": "https://github.com/gilberth/mcp-cloudflare"
+    }
+  ],
   "main": "dist/index.js",
-  "module": "./src/index.ts",
+  "module": "./dist/index.js",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gilberth/mcp-cloudflare.git"
+    "url": "git+https://github.com/mindmorass/mcp-cloudflare.git"
   },
   "types": "./index.d.ts",
   "scripts": {
     "build": "tsc --build",
     "build:swc": "swc src --source-maps --out-dir dist",
     "inspect": "@modelcontextprotocol/inspector tsx src/index.ts",
-    "dev": "npx @smithery/cli dev",
-    "smithery:build": "npx @smithery/cli build"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome lint src/",
+    "lint:fix": "biome lint --write src/",
+    "format": "biome format --write src/",
+    "check": "biome check src/",
+    "check:fix": "biome check --write src/"
   },
   "bin": {
     "mcp-cloudflare": "dist/cli.js"
@@ -30,18 +42,19 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.1",
-    "dotenv": "^16.5.0",
     "zod": "^3.24.3"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@modelcontextprotocol/inspector": "^0.14.3",
-    "@smithery/cli": "^1.0.0",
     "@swc/cli": "^0.7.3",
     "@swc/core": "^1.11.21",
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "dotenv": "^17.3.1",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=20.0.0",
