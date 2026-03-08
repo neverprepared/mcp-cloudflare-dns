@@ -37,7 +37,7 @@ Create a `.env` file:
 
 ```env
 CLOUDFLARE_API_TOKEN=your-api-token-here
-CLOUDFLARE_ZONE_ID=your-zone-id-here
+CLOUDFLARE_ZONE_ID=your-zone-id-here  # Optional: default zone when zone_id not specified per-tool
 CLOUDFLARE_EMAIL=your-email@example.com  # Optional, only for legacy API keys
 ```
 
@@ -50,8 +50,7 @@ CLOUDFLARE_EMAIL=your-email@example.com  # Optional, only for legacy API keys
       "command": "npx",
       "args": ["-y", "@neverprepared/mcp-cloudflare-dns"],
       "env": {
-        "CLOUDFLARE_API_TOKEN": "your-api-token",
-        "CLOUDFLARE_ZONE_ID": "your-zone-id"
+        "CLOUDFLARE_API_TOKEN": "your-api-token"
       }
     }
   }

@@ -8,17 +8,15 @@ import createServer from './index.js';
 dotenv.config();
 
 // Validate required config
-if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ZONE_ID) {
-  console.error('Missing required environment variables:');
-  console.error('  CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID');
+if (!process.env.CLOUDFLARE_API_TOKEN) {
+  console.error('Missing required environment variable: CLOUDFLARE_API_TOKEN');
   console.error('');
   console.error('Create a .env file with:');
   console.error('  CLOUDFLARE_API_TOKEN=your-api-token');
-  console.error('  CLOUDFLARE_ZONE_ID=your-zone-id');
+  console.error('  CLOUDFLARE_ZONE_ID=your-zone-id  # Optional: default zone for all tools');
   console.error('  CLOUDFLARE_EMAIL=your-email@example.com  # Optional');
   console.error('');
   console.error('Get your API token at: https://dash.cloudflare.com/profile/api-tokens');
-  console.error('Find your Zone ID in the Cloudflare dashboard for your domain');
   process.exit(1);
 }
 
