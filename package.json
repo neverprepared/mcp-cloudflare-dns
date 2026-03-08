@@ -1,8 +1,8 @@
 {
-  "name": "@mindmorass/mcp-cloudflare",
+  "name": "@neverprepared/mcp-cloudflare-dns",
   "description": "A Model Context Protocol server implementation for Cloudflare DNS that enables AI agents to manage DNS records for your domains",
   "version": "1.6.0",
-  "author": "mindmorass",
+  "author": "neverprepared",
   "contributors": [
     {
       "name": "TheLord",
@@ -14,7 +14,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mindmorass/mcp-cloudflare.git"
+    "url": "git+https://github.com/neverprepared/mcp-cloudflare-dns.git"
   },
   "types": "./index.d.ts",
   "scripts": {

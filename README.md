@@ -48,7 +48,7 @@ CLOUDFLARE_EMAIL=your-email@example.com  # Optional, only for legacy API keys
   "mcpServers": {
     "cloudflare": {
       "command": "npx",
-      "args": ["-y", "@mindmorass/mcp-cloudflare"],
+      "args": ["-y", "@neverprepared/mcp-cloudflare-dns"],
       "env": {
         "CLOUDFLARE_API_TOKEN": "your-api-token",
         "CLOUDFLARE_ZONE_ID": "your-zone-id"
@@ -61,7 +61,7 @@ CLOUDFLARE_EMAIL=your-email@example.com  # Optional, only for legacy API keys
 ### Run locally
 
 ```bash
-npx -y @mindmorass/mcp-cloudflare
+npx -y @neverprepared/mcp-cloudflare-dns
 ```
 
 ## Available Tools
