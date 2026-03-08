@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.1.0...v1.1.1) (2026-03-08)
+
+
+### Bug Fixes
+
+* move publish step into release-please workflow ([ef4ea4e](https://github.com/neverprepared/mcp-cloudflare-dns/commit/ef4ea4eed83433b3d4b0e69e3268e480db39e24c))
+* trigger release to test publish pipeline ([02588ae](https://github.com/neverprepared/mcp-cloudflare-dns/commit/02588aedd1c516d7316ac574662115ff76dca58b))
+
 ## [1.1.0](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.0.0...v1.1.0) (2026-03-08)
 
 
