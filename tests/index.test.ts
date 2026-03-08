@@ -146,13 +146,13 @@ describe('MCP server tool handlers', () => {
     it('passes name filter to findDnsRecords', async () => {
       vi.mocked(CloudflareApi.findDnsRecords).mockResolvedValueOnce([]);
       await callTool(server, 'list_dns_records', { name: 'example.com' });
-      expect(CloudflareApi.findDnsRecords).toHaveBeenCalledWith('example.com', undefined);
+      expect(CloudflareApi.findDnsRecords).toHaveBeenCalledWith('example.com', undefined, undefined);
     });
 
     it('passes type filter to findDnsRecords', async () => {
       vi.mocked(CloudflareApi.findDnsRecords).mockResolvedValueOnce([]);
       await callTool(server, 'list_dns_records', { type: 'A' });
-      expect(CloudflareApi.findDnsRecords).toHaveBeenCalledWith(undefined, 'A');
+      expect(CloudflareApi.findDnsRecords).toHaveBeenCalledWith(undefined, 'A', undefined);
     });
 
     it('returns a no-records message when result is empty', async () => {
@@ -268,7 +268,8 @@ describe('MCP server tool handlers', () => {
       await callTool(server, 'update_dns_record', { recordId: VALID_ID, content: '9.9.9.9' });
       expect(CloudflareApi.updateDnsRecord).toHaveBeenCalledWith(
         VALID_ID,
-        expect.objectContaining({ content: '9.9.9.9' })
+        expect.objectContaining({ content: '9.9.9.9' }),
+        undefined,
       );
       const [, updates] = vi.mocked(CloudflareApi.updateDnsRecord).mock.calls[0];
       expect(updates).not.toHaveProperty('recordId');

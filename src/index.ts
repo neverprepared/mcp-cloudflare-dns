@@ -5,22 +5,24 @@ import { CloudflareApi } from './api.js';
 import { CreateDnsRecordRequest, DnsRecordType, UpdateDnsRecordRequest } from './types.js';
 
 // Zod schemas for validating incoming tool arguments
-const ListDnsRecordsArgs = z.object({
+const ZoneIdArg = z.object({ zone_id: z.string().optional() });
+
+const ListDnsRecordsArgs = ZoneIdArg.extend({
   name: z.string().optional(),
   type: DnsRecordType.optional(),
 });
 
-const GetDnsRecordArgs = z.object({
+const GetDnsRecordArgs = ZoneIdArg.extend({
   recordId: z.string().min(1),
 });
 
-const CreateDnsRecordArgs = CreateDnsRecordRequest;
+const CreateDnsRecordArgs = CreateDnsRecordRequest.merge(ZoneIdArg);
 
-const UpdateDnsRecordArgs = UpdateDnsRecordRequest.extend({
+const UpdateDnsRecordArgs = UpdateDnsRecordRequest.merge(ZoneIdArg).extend({
   recordId: z.string().min(1),
 });
 
-const DeleteDnsRecordArgs = z.object({
+const DeleteDnsRecordArgs = ZoneIdArg.extend({
   recordId: z.string().min(1),
 });
 
@@ -47,11 +49,25 @@ export default function createServer() {
     return {
       tools: [
         {
+          name: 'list_zones',
+          description:
+            'List all Cloudflare zones (domains) on the account. Use this to discover zone IDs when the user refers to a domain by name.',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
           name: 'list_dns_records',
-          description: 'List all DNS records for the configured zone',
+          description:
+            'List all DNS records for a zone. Call list_zones first to resolve a domain name to a zone_id if needed.',
           inputSchema: {
             type: 'object',
             properties: {
+              zone_id: {
+                type: 'string',
+                description: 'Cloudflare zone ID. Omit to use CLOUDFLARE_ZONE_ID env var.',
+              },
               name: {
                 type: 'string',
                 description: 'Filter by record name (optional)',
@@ -70,6 +86,10 @@ export default function createServer() {
           inputSchema: {
             type: 'object',
             properties: {
+              zone_id: {
+                type: 'string',
+                description: 'Cloudflare zone ID. Omit to use CLOUDFLARE_ZONE_ID env var.',
+              },
               recordId: {
                 type: 'string',
                 description: 'The DNS record ID',
@@ -80,10 +100,15 @@ export default function createServer() {
         },
         {
           name: 'create_dns_record',
-          description: 'Create a new DNS record',
+          description:
+            'Create a new DNS record. Call list_zones first to resolve a domain name to a zone_id if needed.',
           inputSchema: {
             type: 'object',
             properties: {
+              zone_id: {
+                type: 'string',
+                description: 'Cloudflare zone ID. Omit to use CLOUDFLARE_ZONE_ID env var.',
+              },
               type: {
                 type: 'string',
                 enum: ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR'],
@@ -120,6 +145,10 @@ export default function createServer() {
           inputSchema: {
             type: 'object',
             properties: {
+              zone_id: {
+                type: 'string',
+                description: 'Cloudflare zone ID. Omit to use CLOUDFLARE_ZONE_ID env var.',
+              },
               recordId: {
                 type: 'string',
                 description: 'The DNS record ID to update',
@@ -160,6 +189,10 @@ export default function createServer() {
           inputSchema: {
             type: 'object',
             properties: {
+              zone_id: {
+                type: 'string',
+                description: 'Cloudflare zone ID. Omit to use CLOUDFLARE_ZONE_ID env var.',
+              },
               recordId: {
                 type: 'string',
                 description: 'The DNS record ID to delete',
@@ -175,6 +208,10 @@ export default function createServer() {
   // Handle tool calls
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+
+    if (name === 'list_zones') {
+      return await handleListZones();
+    }
 
     if (name === 'list_dns_records') {
       return await handleListDnsRecords(ListDnsRecordsArgs.parse(args ?? {}));
@@ -200,9 +237,39 @@ export default function createServer() {
   });
 
   // Tool handlers
+  const handleListZones = async () => {
+    try {
+      const zones = await CloudflareApi.listZones();
+
+      if (zones.length === 0) {
+        return { content: [{ type: 'text', text: 'No zones found on this account.' }] };
+      }
+
+      const zonesText = zones
+        .map(
+          (z) => `- ${safeRecord(z.name)} [ID: ${z.id}] (${z.status}${z.paused ? ', paused' : ''})`,
+        )
+        .join('\n');
+
+      return {
+        content: [{ type: 'text', text: `Found ${zones.length} zone(s):\n\n${zonesText}` }],
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `Error listing zones: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+        ],
+      };
+    }
+  };
+
   const handleListDnsRecords = async (args: z.infer<typeof ListDnsRecordsArgs>) => {
     try {
-      const records = await CloudflareApi.findDnsRecords(args.name, args.type);
+      const records = await CloudflareApi.findDnsRecords(args.name, args.type, args.zone_id);
 
       if (records.length === 0) {
         return {
@@ -240,7 +307,7 @@ export default function createServer() {
 
   const handleGetDnsRecord = async (args: z.infer<typeof GetDnsRecordArgs>) => {
     try {
-      const record = await CloudflareApi.getDnsRecord(args.recordId);
+      const record = await CloudflareApi.getDnsRecord(args.recordId, args.zone_id);
 
       return {
         content: [
@@ -274,18 +341,19 @@ ${record.priority !== undefined ? `- Priority: ${record.priority}` : ''}
 
   const handleCreateDnsRecord = async (args: z.infer<typeof CreateDnsRecordArgs>) => {
     try {
-      const record = await CloudflareApi.createDnsRecord(args);
+      const { zone_id, ...record } = args;
+      const createdRecord = await CloudflareApi.createDnsRecord(record, zone_id);
 
       return {
         content: [
           {
             type: 'text',
             text: `DNS record created successfully.
-- Name: ${safeRecord(record.name)}
-- Type: ${record.type}
-- Content: ${safeRecord(record.content)}
-- ID: ${record.id}
-${record.proxied ? '- Proxied through Cloudflare' : ''}`,
+- Name: ${safeRecord(createdRecord.name)}
+- Type: ${createdRecord.type}
+- Content: ${safeRecord(createdRecord.content)}
+- ID: ${createdRecord.id}
+${createdRecord.proxied ? '- Proxied through Cloudflare' : ''}`,
           },
         ],
       };
@@ -304,8 +372,8 @@ ${record.proxied ? '- Proxied through Cloudflare' : ''}`,
 
   const handleUpdateDnsRecord = async (args: z.infer<typeof UpdateDnsRecordArgs>) => {
     try {
-      const { recordId, ...updates } = args;
-      const record = await CloudflareApi.updateDnsRecord(recordId, updates);
+      const { recordId, zone_id, ...updates } = args;
+      const record = await CloudflareApi.updateDnsRecord(recordId, updates, zone_id);
 
       return {
         content: [
@@ -335,7 +403,7 @@ ${record.proxied ? '- Proxied through Cloudflare' : ''}`,
 
   const handleDeleteDnsRecord = async (args: z.infer<typeof DeleteDnsRecordArgs>) => {
     try {
-      await CloudflareApi.deleteDnsRecord(args.recordId);
+      await CloudflareApi.deleteDnsRecord(args.recordId, args.zone_id);
 
       return {
         content: [

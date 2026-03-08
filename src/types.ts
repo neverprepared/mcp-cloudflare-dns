@@ -67,8 +67,31 @@ export const UpdateDnsRecordRequest = z.object({
   proxied: z.boolean().optional(),
 });
 
+export const CloudflareZone = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.string(),
+  paused: z.boolean(),
+});
+
+export const CloudflareZonesApiResponse = z.object({
+  success: z.boolean(),
+  errors: z.array(z.object({ code: z.number(), message: z.string() })),
+  messages: z.array(z.object({ code: z.number(), message: z.string() })),
+  result: z.array(CloudflareZone).nullable().optional(),
+  result_info: z
+    .object({
+      page: z.number(),
+      per_page: z.number(),
+      count: z.number(),
+      total_count: z.number(),
+    })
+    .optional(),
+});
+
 export type DnsRecord = z.infer<typeof CloudflareDnsRecord>;
 export type DnsRecordTypeEnum = z.infer<typeof DnsRecordType>;
 export type ApiResponse = z.infer<typeof CloudflareApiResponse>;
 export type CreateDnsRecord = z.infer<typeof CreateDnsRecordRequest>;
 export type UpdateDnsRecord = z.infer<typeof UpdateDnsRecordRequest>;
+export type Zone = z.infer<typeof CloudflareZone>;

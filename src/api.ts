@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import {
   CloudflareApiResponse,
+  CloudflareZonesApiResponse,
   type CreateDnsRecord,
   CreateDnsRecordRequest,
   type DnsRecord,
   type UpdateDnsRecord,
   UpdateDnsRecordRequest,
+  type Zone,
 } from './types.js';
 
 // Cloudflare record ID format: 32 hex characters
@@ -78,13 +80,41 @@ const getHeaders = () => {
   };
 };
 
+// Make a request to a non-zone-specific Cloudflare API endpoint (e.g. /zones).
+const accountApi = async (endpoint: string) => {
+  const headers = getHeaders();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const url = `https://api.cloudflare.com/client/v4/${endpoint}`;
+    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+
+    if (!response.ok) {
+      throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}`);
+    }
+
+    return response;
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') throw new Error('Cloudflare API request timed out');
+      throw new Error(`Cloudflare API error: ${error.message}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const api = async (
   endpoint: string,
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
   body?: Record<string, unknown>,
+  zoneId?: string,
 ) => {
-  if (!cloudflareConfig.zoneId) {
-    throw new Error('Cloudflare Zone ID not configured');
+  const resolvedZoneId = zoneId ?? cloudflareConfig.zoneId;
+  if (!resolvedZoneId) {
+    throw new Error('No zone ID provided. Pass a zone_id parameter or set CLOUDFLARE_ZONE_ID.');
   }
 
   // Call getHeaders() before entering the try block so a missing-token error
@@ -95,7 +125,7 @@ const api = async (
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
   try {
-    const url = `https://api.cloudflare.com/client/v4/zones/${cloudflareConfig.zoneId}/${endpoint}`;
+    const url = `https://api.cloudflare.com/client/v4/zones/${resolvedZoneId}/${endpoint}`;
 
     const response = await fetch(url, {
       method,
@@ -167,15 +197,32 @@ const parseRecordList = async (response: Response): Promise<DnsRecord[]> => {
 export const CloudflareApi = {
   configure,
 
+  // List all zones on the account
+  listZones: async (): Promise<Zone[]> => {
+    let rawData: unknown;
+    try {
+      rawData = await (await accountApi('zones')).json();
+    } catch {
+      throw new Error('Failed to parse Cloudflare zones response as JSON');
+    }
+    const data = CloudflareZonesApiResponse.parse(rawData);
+    if (!data.success) {
+      throw new Error(sanitizeApiErrors(data.errors));
+    }
+    return data.result ?? [];
+  },
+
   // List all DNS records
-  listDnsRecords: async (): Promise<DnsRecord[]> => {
-    return parseRecordList(await api('dns_records'));
+  listDnsRecords: async (zoneId?: string): Promise<DnsRecord[]> => {
+    return parseRecordList(await api('dns_records', 'GET', undefined, zoneId));
   },
 
   // Get a specific DNS record by ID
-  getDnsRecord: async (recordId: string): Promise<DnsRecord> => {
+  getDnsRecord: async (recordId: string, zoneId?: string): Promise<DnsRecord> => {
     validateRecordId(recordId);
-    const data = await parseApiResponse(await api(`dns_records/${recordId}`));
+    const data = await parseApiResponse(
+      await api(`dns_records/${recordId}`, 'GET', undefined, zoneId),
+    );
 
     if (!data.success) {
       throw new Error(sanitizeApiErrors(data.errors));
@@ -189,9 +236,9 @@ export const CloudflareApi = {
   },
 
   // Create a new DNS record
-  createDnsRecord: async (record: CreateDnsRecord): Promise<DnsRecord> => {
+  createDnsRecord: async (record: CreateDnsRecord, zoneId?: string): Promise<DnsRecord> => {
     const validatedRecord = CreateDnsRecordRequest.parse(record);
-    const data = await parseApiResponse(await api('dns_records', 'POST', validatedRecord));
+    const data = await parseApiResponse(await api('dns_records', 'POST', validatedRecord, zoneId));
 
     if (!data.success) {
       throw new Error(sanitizeApiErrors(data.errors));
@@ -205,11 +252,15 @@ export const CloudflareApi = {
   },
 
   // Update an existing DNS record
-  updateDnsRecord: async (recordId: string, updates: UpdateDnsRecord): Promise<DnsRecord> => {
+  updateDnsRecord: async (
+    recordId: string,
+    updates: UpdateDnsRecord,
+    zoneId?: string,
+  ): Promise<DnsRecord> => {
     validateRecordId(recordId);
     const validatedUpdates = UpdateDnsRecordRequest.parse(updates);
     const data = await parseApiResponse(
-      await api(`dns_records/${recordId}`, 'PATCH', validatedUpdates),
+      await api(`dns_records/${recordId}`, 'PATCH', validatedUpdates, zoneId),
     );
 
     if (!data.success) {
@@ -224,9 +275,11 @@ export const CloudflareApi = {
   },
 
   // Delete a DNS record
-  deleteDnsRecord: async (recordId: string): Promise<void> => {
+  deleteDnsRecord: async (recordId: string, zoneId?: string): Promise<void> => {
     validateRecordId(recordId);
-    const data = await parseApiResponse(await api(`dns_records/${recordId}`, 'DELETE'));
+    const data = await parseApiResponse(
+      await api(`dns_records/${recordId}`, 'DELETE', undefined, zoneId),
+    );
 
     if (!data.success) {
       throw new Error(sanitizeApiErrors(data.errors));
@@ -234,12 +287,12 @@ export const CloudflareApi = {
   },
 
   // Find DNS records by name and/or type
-  findDnsRecords: async (name?: string, type?: string): Promise<DnsRecord[]> => {
+  findDnsRecords: async (name?: string, type?: string, zoneId?: string): Promise<DnsRecord[]> => {
     const params = new URLSearchParams();
     if (name) params.append('name', name);
     if (type) params.append('type', type);
     const query = params.toString();
     const endpoint = query ? `dns_records?${query}` : 'dns_records';
-    return parseRecordList(await api(endpoint));
+    return parseRecordList(await api(endpoint, 'GET', undefined, zoneId));
   },
 };
