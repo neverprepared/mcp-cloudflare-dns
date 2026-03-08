@@ -1,16 +1,15 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
 
 jobs:
   release:
     name: Build, Publish & Release
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # create GitHub release
+      contents: read
       id-token: write  # npm provenance
 
     steps:
@@ -20,7 +19,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          registry-url: https://npm.pkg.github.com
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: npm ci
@@ -34,12 +33,7 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Publish to GitHub Packages
+      - name: Publish to npm
         run: npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

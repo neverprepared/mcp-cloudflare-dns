@@ -58,12 +58,6 @@ CLOUDFLARE_EMAIL=your-email@example.com  # Optional, only for legacy API keys
 }
 ```
 
-> This package is hosted on [GitHub Packages](https://github.com/mindmorass/mcp-cloudflare/pkgs/npm/mcp-cloudflare).
-> Add the following to your `.npmrc` to install it:
-> ```
-> @mindmorass:registry=https://npm.pkg.github.com
-> ```
-
 ### Run locally
 
 ```bash
