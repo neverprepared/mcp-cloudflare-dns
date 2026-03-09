@@ -3,6 +3,21 @@ import { z } from 'zod';
 // Cloudflare DNS Record types
 export const DnsRecordType = z.enum(['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR']);
 
+// Structured data for SRV records
+export const SrvData = z.object({
+  priority: z.number().int().min(0).max(65535),
+  weight: z.number().int().min(0).max(65535),
+  port: z.number().int().min(1).max(65535),
+  target: z.string().min(1),
+});
+
+// Structured data for CAA records
+export const CaaData = z.object({
+  flags: z.number().int().min(0).max(255),
+  tag: z.enum(['issue', 'issuewild', 'iodef']),
+  value: z.string().min(1),
+});
+
 export const CloudflareDnsRecord = z.object({
   id: z.string(),
   zone_id: z.string().optional(),
@@ -52,10 +67,11 @@ export const CloudflareApiResponse = z.object({
 export const CreateDnsRecordRequest = z.object({
   type: DnsRecordType,
   name: z.string(),
-  content: z.string(),
+  content: z.string().optional(),
   ttl: z.number().optional().default(1),
   priority: z.number().optional(),
   proxied: z.boolean().optional(),
+  data: z.union([SrvData, CaaData]).optional(),
 });
 
 export const UpdateDnsRecordRequest = z.object({
@@ -65,6 +81,7 @@ export const UpdateDnsRecordRequest = z.object({
   ttl: z.number().optional(),
   priority: z.number().optional(),
   proxied: z.boolean().optional(),
+  data: z.union([SrvData, CaaData]).optional(),
 });
 
 export const CloudflareZone = z.object({
@@ -95,3 +112,5 @@ export type ApiResponse = z.infer<typeof CloudflareApiResponse>;
 export type CreateDnsRecord = z.infer<typeof CreateDnsRecordRequest>;
 export type UpdateDnsRecord = z.infer<typeof UpdateDnsRecordRequest>;
 export type Zone = z.infer<typeof CloudflareZone>;
+export type SrvDataType = z.infer<typeof SrvData>;
+export type CaaDataType = z.infer<typeof CaaData>;

@@ -366,6 +366,258 @@ describe('MCP server tool handlers', () => {
     });
   });
 
+  // ── SRV record validation ─────────────────────────────────────────────────
+
+  describe('SRV record validation', () => {
+    const validSrvData = { priority: 10, weight: 20, port: 5060, target: 'sip.example.com' };
+
+    it('creates an SRV record with valid data object', async () => {
+      vi.mocked(CloudflareApi.createDnsRecord).mockResolvedValueOnce(validRecord);
+      const result = await callTool(server, 'create_dns_record', {
+        type: 'SRV',
+        name: '_sip._tcp.example.com',
+        data: validSrvData,
+      });
+      assertSuccessResponse(result);
+      expect(CloudflareApi.createDnsRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'SRV', data: validSrvData }),
+        undefined,
+      );
+    });
+
+    it('rejects SRV record without data via Zod', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', { type: 'SRV', name: '_sip._tcp.example.com' }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects SRV record with priority out of range (> 65535)', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', {
+          type: 'SRV',
+          name: '_sip._tcp.example.com',
+          data: { ...validSrvData, priority: 65536 },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects SRV record with priority below 0', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', {
+          type: 'SRV',
+          name: '_sip._tcp.example.com',
+          data: { ...validSrvData, priority: -1 },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects SRV record with weight out of range (> 65535)', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', {
+          type: 'SRV',
+          name: '_sip._tcp.example.com',
+          data: { ...validSrvData, weight: 65536 },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects SRV record with port 0 (below minimum 1)', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', {
+          type: 'SRV',
+          name: '_sip._tcp.example.com',
+          data: { ...validSrvData, port: 0 },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects SRV record with port out of range (> 65535)', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', {
+          type: 'SRV',
+          name: '_sip._tcp.example.com',
+          data: { ...validSrvData, port: 65536 },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects SRV record with empty target', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', {
+          type: 'SRV',
+          name: '_sip._tcp.example.com',
+          data: { ...validSrvData, target: '' },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('accepts SRV record with boundary values (priority=0, weight=0, port=1)', async () => {
+      vi.mocked(CloudflareApi.createDnsRecord).mockResolvedValueOnce(validRecord);
+      const result = await callTool(server, 'create_dns_record', {
+        type: 'SRV',
+        name: '_sip._tcp.example.com',
+        data: { priority: 0, weight: 0, port: 1, target: 'sip.example.com' },
+      });
+      assertSuccessResponse(result);
+    });
+
+    it('accepts SRV record with max boundary values', async () => {
+      vi.mocked(CloudflareApi.createDnsRecord).mockResolvedValueOnce(validRecord);
+      const result = await callTool(server, 'create_dns_record', {
+        type: 'SRV',
+        name: '_sip._tcp.example.com',
+        data: { priority: 65535, weight: 65535, port: 65535, target: 'sip.example.com' },
+      });
+      assertSuccessResponse(result);
+    });
+
+    it('updates an SRV record with valid data', async () => {
+      vi.mocked(CloudflareApi.updateDnsRecord).mockResolvedValueOnce(validRecord);
+      const result = await callTool(server, 'update_dns_record', {
+        recordId: VALID_ID,
+        type: 'SRV',
+        data: validSrvData,
+      });
+      assertSuccessResponse(result);
+      expect(CloudflareApi.updateDnsRecord).toHaveBeenCalledWith(
+        VALID_ID,
+        expect.objectContaining({ type: 'SRV', data: validSrvData }),
+        undefined,
+      );
+    });
+
+    it('rejects SRV update with invalid data', async () => {
+      await expect(
+        callTool(server, 'update_dns_record', {
+          recordId: VALID_ID,
+          type: 'SRV',
+          data: { priority: 99999, weight: 20, port: 5060, target: 'sip.example.com' },
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  // ── CAA record validation ─────────────────────────────────────────────────
+
+  describe('CAA record validation', () => {
+    const validCaaData = { flags: 0, tag: 'issue' as const, value: 'letsencrypt.org' };
+
+    it('creates a CAA record with valid data object', async () => {
+      vi.mocked(CloudflareApi.createDnsRecord).mockResolvedValueOnce(validRecord);
+      const result = await callTool(server, 'create_dns_record', {
+        type: 'CAA',
+        name: 'example.com',
+        data: validCaaData,
+      });
+      assertSuccessResponse(result);
+      expect(CloudflareApi.createDnsRecord).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'CAA', data: validCaaData }),
+        undefined,
+      );
+    });
+
+    it('rejects CAA record without data via Zod', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', { type: 'CAA', name: 'example.com' }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects CAA record with flags out of range (> 255)', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', {
+          type: 'CAA',
+          name: 'example.com',
+          data: { ...validCaaData, flags: 256 },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects CAA record with flags below 0', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', {
+          type: 'CAA',
+          name: 'example.com',
+          data: { ...validCaaData, flags: -1 },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects CAA record with invalid tag', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', {
+          type: 'CAA',
+          name: 'example.com',
+          data: { ...validCaaData, tag: 'invalid' },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('accepts CAA record with tag issuewild', async () => {
+      vi.mocked(CloudflareApi.createDnsRecord).mockResolvedValueOnce(validRecord);
+      const result = await callTool(server, 'create_dns_record', {
+        type: 'CAA',
+        name: 'example.com',
+        data: { flags: 0, tag: 'issuewild', value: 'letsencrypt.org' },
+      });
+      assertSuccessResponse(result);
+    });
+
+    it('accepts CAA record with tag iodef', async () => {
+      vi.mocked(CloudflareApi.createDnsRecord).mockResolvedValueOnce(validRecord);
+      const result = await callTool(server, 'create_dns_record', {
+        type: 'CAA',
+        name: 'example.com',
+        data: { flags: 0, tag: 'iodef', value: 'mailto:admin@example.com' },
+      });
+      assertSuccessResponse(result);
+    });
+
+    it('rejects CAA record with empty value', async () => {
+      await expect(
+        callTool(server, 'create_dns_record', {
+          type: 'CAA',
+          name: 'example.com',
+          data: { ...validCaaData, value: '' },
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('accepts CAA record with max flags value (255)', async () => {
+      vi.mocked(CloudflareApi.createDnsRecord).mockResolvedValueOnce(validRecord);
+      const result = await callTool(server, 'create_dns_record', {
+        type: 'CAA',
+        name: 'example.com',
+        data: { flags: 255, tag: 'issue', value: 'letsencrypt.org' },
+      });
+      assertSuccessResponse(result);
+    });
+
+    it('updates a CAA record with valid data', async () => {
+      vi.mocked(CloudflareApi.updateDnsRecord).mockResolvedValueOnce(validRecord);
+      const result = await callTool(server, 'update_dns_record', {
+        recordId: VALID_ID,
+        type: 'CAA',
+        data: validCaaData,
+      });
+      assertSuccessResponse(result);
+      expect(CloudflareApi.updateDnsRecord).toHaveBeenCalledWith(
+        VALID_ID,
+        expect.objectContaining({ type: 'CAA', data: validCaaData }),
+        undefined,
+      );
+    });
+
+    it('rejects CAA update with invalid data', async () => {
+      await expect(
+        callTool(server, 'update_dns_record', {
+          recordId: VALID_ID,
+          type: 'CAA',
+          data: { flags: 256, tag: 'issue', value: 'letsencrypt.org' },
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
   // ── unknown tool ──────────────────────────────────────────────────────────
 
   describe('unknown tool', () => {

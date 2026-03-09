@@ -2,7 +2,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { CloudflareApi } from './api.js';
-import { CreateDnsRecordRequest, DnsRecordType, UpdateDnsRecordRequest } from './types.js';
+import { CaaData, CreateDnsRecordRequest, DnsRecordType, SrvData, UpdateDnsRecordRequest } from './types.js';
 
 // Zod schemas for validating incoming tool arguments
 const ZoneIdArg = z.object({ zone_id: z.string().optional() });
@@ -16,10 +16,59 @@ const GetDnsRecordArgs = ZoneIdArg.extend({
   recordId: z.string().min(1),
 });
 
-const CreateDnsRecordArgs = CreateDnsRecordRequest.merge(ZoneIdArg);
+const CreateDnsRecordArgs = CreateDnsRecordRequest.merge(ZoneIdArg).superRefine((val, ctx) => {
+  if (val.type !== 'SRV' && val.type !== 'CAA' && !val.content) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'content is required for non-SRV/CAA records',
+      path: ['content'],
+    });
+  }
+  if (val.type === 'SRV') {
+    const result = SrvData.safeParse(val.data);
+    if (!result.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'data with valid SRV fields (priority 0-65535, weight 0-65535, port 1-65535, target non-empty) required for SRV records',
+        path: ['data'],
+      });
+    }
+  }
+  if (val.type === 'CAA') {
+    const result = CaaData.safeParse(val.data);
+    if (!result.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'data with valid CAA fields (flags 0-255, tag: issue/issuewild/iodef, value non-empty) required for CAA records',
+        path: ['data'],
+      });
+    }
+  }
+});
 
 const UpdateDnsRecordArgs = UpdateDnsRecordRequest.merge(ZoneIdArg).extend({
   recordId: z.string().min(1),
+}).superRefine((val, ctx) => {
+  if (val.type === 'SRV' && val.data !== undefined) {
+    const result = SrvData.safeParse(val.data);
+    if (!result.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'data with valid SRV fields (priority 0-65535, weight 0-65535, port 1-65535, target non-empty) required for SRV records',
+        path: ['data'],
+      });
+    }
+  }
+  if (val.type === 'CAA' && val.data !== undefined) {
+    const result = CaaData.safeParse(val.data);
+    if (!result.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'data with valid CAA fields (flags 0-255, tag: issue/issuewild/iodef, value non-empty) required for CAA records',
+        path: ['data'],
+      });
+    }
+  }
 });
 
 const DeleteDnsRecordArgs = ZoneIdArg.extend({
@@ -120,7 +169,7 @@ export default function createServer() {
               },
               content: {
                 type: 'string',
-                description: 'DNS record content',
+                description: 'DNS record content. Required for non-SRV/CAA records.',
               },
               ttl: {
                 type: 'number',
@@ -135,8 +184,51 @@ export default function createServer() {
                 type: 'boolean',
                 description: 'Whether the record should be proxied through Cloudflare',
               },
+              data: {
+                type: 'object',
+                description: 'Structured data for SRV or CAA records. Required when type is SRV or CAA.',
+                properties: {
+                  priority: {
+                    type: 'number',
+                    description: 'SRV priority (0-65535)',
+                    minimum: 0,
+                    maximum: 65535,
+                  },
+                  weight: {
+                    type: 'number',
+                    description: 'SRV weight (0-65535)',
+                    minimum: 0,
+                    maximum: 65535,
+                  },
+                  port: {
+                    type: 'number',
+                    description: 'SRV port (1-65535)',
+                    minimum: 1,
+                    maximum: 65535,
+                  },
+                  target: {
+                    type: 'string',
+                    description: 'SRV target hostname (non-empty)',
+                  },
+                  flags: {
+                    type: 'number',
+                    description: 'CAA flags (0-255)',
+                    minimum: 0,
+                    maximum: 255,
+                  },
+                  tag: {
+                    type: 'string',
+                    enum: ['issue', 'issuewild', 'iodef'],
+                    description: 'CAA tag',
+                  },
+                  value: {
+                    type: 'string',
+                    description: 'CAA value (non-empty)',
+                  },
+                },
+              },
             },
-            required: ['type', 'name', 'content'],
+            required: ['type', 'name'],
           },
         },
         {
@@ -178,6 +270,49 @@ export default function createServer() {
               proxied: {
                 type: 'boolean',
                 description: 'Whether the record should be proxied through Cloudflare',
+              },
+              data: {
+                type: 'object',
+                description: 'Structured data for SRV or CAA records.',
+                properties: {
+                  priority: {
+                    type: 'number',
+                    description: 'SRV priority (0-65535)',
+                    minimum: 0,
+                    maximum: 65535,
+                  },
+                  weight: {
+                    type: 'number',
+                    description: 'SRV weight (0-65535)',
+                    minimum: 0,
+                    maximum: 65535,
+                  },
+                  port: {
+                    type: 'number',
+                    description: 'SRV port (1-65535)',
+                    minimum: 1,
+                    maximum: 65535,
+                  },
+                  target: {
+                    type: 'string',
+                    description: 'SRV target hostname (non-empty)',
+                  },
+                  flags: {
+                    type: 'number',
+                    description: 'CAA flags (0-255)',
+                    minimum: 0,
+                    maximum: 255,
+                  },
+                  tag: {
+                    type: 'string',
+                    enum: ['issue', 'issuewild', 'iodef'],
+                    description: 'CAA tag',
+                  },
+                  value: {
+                    type: 'string',
+                    description: 'CAA value (non-empty)',
+                  },
+                },
               },
             },
             required: ['recordId'],
