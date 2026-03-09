@@ -26,6 +26,22 @@ const DeleteDnsRecordArgs = ZoneIdArg.extend({
   recordId: z.string().min(1),
 });
 
+const BulkCreateDnsRecordsArgs = ZoneIdArg.extend({
+  records: z.array(CreateDnsRecordRequest).min(1),
+});
+
+const BulkUpdateDnsRecordItem = UpdateDnsRecordRequest.extend({
+  id: z.string().min(1),
+});
+
+const BulkUpdateDnsRecordsArgs = ZoneIdArg.extend({
+  records: z.array(BulkUpdateDnsRecordItem).min(1),
+});
+
+const BulkDeleteDnsRecordsArgs = ZoneIdArg.extend({
+  ids: z.array(z.string().min(1)).min(1),
+});
+
 // Wrap external DNS record data to prevent prompt injection.
 // DNS record content is untrusted user-controlled data that could contain
 // instructions targeting the LLM consuming this tool's output.
@@ -201,6 +217,114 @@ export default function createServer() {
             required: ['recordId'],
           },
         },
+        {
+          name: 'create_dns_records',
+          description:
+            'Create multiple DNS records in bulk. Returns per-record results and handles partial failures gracefully.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              zone_id: {
+                type: 'string',
+                description: 'Cloudflare zone ID. Omit to use CLOUDFLARE_ZONE_ID env var.',
+              },
+              records: {
+                type: 'array',
+                description: 'Array of DNS records to create',
+                items: {
+                  type: 'object',
+                  properties: {
+                    type: {
+                      type: 'string',
+                      enum: ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR'],
+                      description: 'DNS record type',
+                    },
+                    name: { type: 'string', description: 'DNS record name' },
+                    content: { type: 'string', description: 'DNS record content' },
+                    ttl: {
+                      type: 'number',
+                      description: 'Time to live (TTL) in seconds (default: 1 for auto)',
+                      minimum: 1,
+                    },
+                    priority: { type: 'number', description: 'Priority (for MX records)' },
+                    proxied: {
+                      type: 'boolean',
+                      description: 'Whether the record should be proxied through Cloudflare',
+                    },
+                  },
+                  required: ['type', 'name', 'content'],
+                },
+                minItems: 1,
+              },
+            },
+            required: ['records'],
+          },
+        },
+        {
+          name: 'update_dns_records',
+          description:
+            'Update multiple DNS records in bulk. Returns per-record results and handles partial failures gracefully.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              zone_id: {
+                type: 'string',
+                description: 'Cloudflare zone ID. Omit to use CLOUDFLARE_ZONE_ID env var.',
+              },
+              records: {
+                type: 'array',
+                description: 'Array of DNS record updates. Each item must include the record ID.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string', description: 'The DNS record ID to update' },
+                    type: {
+                      type: 'string',
+                      enum: ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR'],
+                      description: 'DNS record type',
+                    },
+                    name: { type: 'string', description: 'DNS record name' },
+                    content: { type: 'string', description: 'DNS record content' },
+                    ttl: {
+                      type: 'number',
+                      description: 'Time to live (TTL) in seconds',
+                      minimum: 1,
+                    },
+                    priority: { type: 'number', description: 'Priority (for MX records)' },
+                    proxied: {
+                      type: 'boolean',
+                      description: 'Whether the record should be proxied through Cloudflare',
+                    },
+                  },
+                  required: ['id'],
+                },
+                minItems: 1,
+              },
+            },
+            required: ['records'],
+          },
+        },
+        {
+          name: 'delete_dns_records',
+          description:
+            'Delete multiple DNS records in bulk. Returns per-record results and handles partial failures gracefully.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              zone_id: {
+                type: 'string',
+                description: 'Cloudflare zone ID. Omit to use CLOUDFLARE_ZONE_ID env var.',
+              },
+              ids: {
+                type: 'array',
+                description: 'Array of DNS record IDs to delete',
+                items: { type: 'string' },
+                minItems: 1,
+              },
+            },
+            required: ['ids'],
+          },
+        },
       ],
     };
   });
@@ -231,6 +355,18 @@ export default function createServer() {
 
     if (name === 'delete_dns_record') {
       return await handleDeleteDnsRecord(DeleteDnsRecordArgs.parse(args));
+    }
+
+    if (name === 'create_dns_records') {
+      return await handleCreateDnsRecords(BulkCreateDnsRecordsArgs.parse(args));
+    }
+
+    if (name === 'update_dns_records') {
+      return await handleUpdateDnsRecords(BulkUpdateDnsRecordsArgs.parse(args));
+    }
+
+    if (name === 'delete_dns_records') {
+      return await handleDeleteDnsRecords(BulkDeleteDnsRecordsArgs.parse(args));
     }
 
     throw new Error('Unknown tool');
@@ -420,6 +556,99 @@ ${record.proxied ? '- Proxied through Cloudflare' : ''}`,
           {
             type: 'text',
             text: `Error deleting DNS record: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+        ],
+      };
+    }
+  };
+
+  const handleCreateDnsRecords = async (args: z.infer<typeof BulkCreateDnsRecordsArgs>) => {
+    try {
+      const { zone_id, records } = args;
+      const results = await CloudflareApi.createDnsRecords(records, zone_id);
+      const succeededCount = results.filter((r) => r.success).length;
+      const failedCount = results.length - succeededCount;
+
+      const lines = results.map((r, i) => {
+        if (r.success) {
+          return `[${i + 1}] Created: ${safeRecord(r.record.name)} (${r.record.type}) -> ${safeRecord(r.record.content)} [ID: ${r.record.id}]`;
+        }
+        return `[${i + 1}] Failed: ${r.error}`;
+      });
+
+      const summary = `Bulk create complete: ${succeededCount} succeeded, ${failedCount} failed (${results.length} total).`;
+      return {
+        content: [{ type: 'text', text: `${summary}\n\n${lines.join('\n')}` }],
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `Error creating DNS records: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+        ],
+      };
+    }
+  };
+
+  const handleUpdateDnsRecords = async (args: z.infer<typeof BulkUpdateDnsRecordsArgs>) => {
+    try {
+      const { zone_id, records } = args;
+      const results = await CloudflareApi.updateDnsRecords(records, zone_id);
+      const succeededCount = results.filter((r) => r.success).length;
+      const failedCount = results.length - succeededCount;
+
+      const lines = results.map((r, i) => {
+        if (r.success) {
+          return `[${i + 1}] Updated [ID: ${r.id}]: ${safeRecord(r.record.name)} (${r.record.type}) -> ${safeRecord(r.record.content)}`;
+        }
+        return `[${i + 1}] Failed [ID: ${r.id}]: ${r.error}`;
+      });
+
+      const summary = `Bulk update complete: ${succeededCount} succeeded, ${failedCount} failed (${results.length} total).`;
+      return {
+        content: [{ type: 'text', text: `${summary}\n\n${lines.join('\n')}` }],
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `Error updating DNS records: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+        ],
+      };
+    }
+  };
+
+  const handleDeleteDnsRecords = async (args: z.infer<typeof BulkDeleteDnsRecordsArgs>) => {
+    try {
+      const { zone_id, ids } = args;
+      const results = await CloudflareApi.deleteDnsRecords(ids, zone_id);
+      const succeededCount = results.filter((r) => r.success).length;
+      const failedCount = results.length - succeededCount;
+
+      const lines = results.map((r, i) => {
+        if (r.success) {
+          return `[${i + 1}] Deleted: ${r.id}`;
+        }
+        return `[${i + 1}] Failed [ID: ${r.id}]: ${r.error}`;
+      });
+
+      const summary = `Bulk delete complete: ${succeededCount} succeeded, ${failedCount} failed (${results.length} total).`;
+      return {
+        content: [{ type: 'text', text: `${summary}\n\n${lines.join('\n')}` }],
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `Error deleting DNS records: ${error instanceof Error ? error.message : 'Unknown error'}`,
           },
         ],
       };

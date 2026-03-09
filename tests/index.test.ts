@@ -11,6 +11,9 @@ vi.mock('../src/api.js', () => ({
     createDnsRecord: vi.fn(),
     updateDnsRecord: vi.fn(),
     deleteDnsRecord: vi.fn(),
+    createDnsRecords: vi.fn(),
+    updateDnsRecords: vi.fn(),
+    deleteDnsRecords: vi.fn(),
   },
 }));
 
@@ -363,6 +366,260 @@ describe('MCP server tool handlers', () => {
 
     it('rejects missing recordId via Zod', async () => {
       await expect(callTool(server, 'delete_dns_record', {})).rejects.toThrow();
+    });
+  });
+
+  // ── create_dns_records (bulk) ─────────────────────────────────────────────
+
+  describe('create_dns_records', () => {
+    const records = [
+      { type: 'A', name: 'a.example.com', content: '1.1.1.1' },
+      { type: 'A', name: 'b.example.com', content: '2.2.2.2' },
+    ];
+
+    const makeSuccessResult = (name: string, content: string) => ({
+      success: true,
+      record: { ...validRecord, name, content },
+    });
+
+    it('returns bulk create summary with per-item results on full success', async () => {
+      vi.mocked(CloudflareApi.createDnsRecords).mockResolvedValueOnce([
+        makeSuccessResult('a.example.com', '1.1.1.1'),
+        makeSuccessResult('b.example.com', '2.2.2.2'),
+      ]);
+      const result = await callTool(server, 'create_dns_records', { records });
+      assertSuccessResponse(result);
+      const text = getText(result);
+      expect(text).toContain('2 succeeded');
+      expect(text).toContain('0 failed');
+    });
+
+    it('reports partial failures in per-item output', async () => {
+      vi.mocked(CloudflareApi.createDnsRecords).mockResolvedValueOnce([
+        makeSuccessResult('a.example.com', '1.1.1.1'),
+        { success: false, error: 'Cloudflare API request failed (code 1001)' },
+      ]);
+      const result = await callTool(server, 'create_dns_records', { records });
+      assertSuccessResponse(result);
+      const text = getText(result);
+      expect(text).toContain('1 succeeded');
+      expect(text).toContain('1 failed');
+      expect(text).toContain('code 1001');
+    });
+
+    it('wraps record name and content with [EXTERNAL DATA: ...] in output', async () => {
+      vi.mocked(CloudflareApi.createDnsRecords).mockResolvedValueOnce([
+        makeSuccessResult('injected name', 'injected content'),
+      ]);
+      const text = getText(await callTool(server, 'create_dns_records', { records: [records[0]] }));
+      expect(text).toContain('[EXTERNAL DATA: injected name]');
+      expect(text).toContain('[EXTERNAL DATA: injected content]');
+    });
+
+    it('returns isError: true when CloudflareApi throws (e.g. missing token)', async () => {
+      vi.mocked(CloudflareApi.createDnsRecords).mockRejectedValueOnce(
+        new Error('Cloudflare API Token not configured'),
+      );
+      const result = await callTool(server, 'create_dns_records', { records });
+      assertErrorResponse(result);
+      expect(getText(result)).toContain('Error creating DNS records');
+    });
+
+    it('rejects missing records array via Zod', async () => {
+      await expect(callTool(server, 'create_dns_records', {})).rejects.toThrow();
+    });
+
+    it('rejects empty records array via Zod', async () => {
+      await expect(callTool(server, 'create_dns_records', { records: [] })).rejects.toThrow();
+    });
+
+    it('rejects records with invalid type via Zod', async () => {
+      await expect(
+        callTool(server, 'create_dns_records', {
+          records: [{ type: 'SPF', name: 'x.com', content: '1.1.1.1' }],
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('passes zone_id to createDnsRecords', async () => {
+      vi.mocked(CloudflareApi.createDnsRecords).mockResolvedValueOnce([]);
+      await callTool(server, 'create_dns_records', {
+        zone_id: 'custom-zone',
+        records: [records[0]],
+      }).catch(() => {});
+      expect(CloudflareApi.createDnsRecords).toHaveBeenCalledWith(
+        expect.any(Array),
+        'custom-zone',
+      );
+    });
+  });
+
+  // ── update_dns_records (bulk) ─────────────────────────────────────────────
+
+  describe('update_dns_records', () => {
+    const updateRecords = [
+      { id: VALID_ID, content: '9.9.9.9' },
+      { id: 'fedcba9876543210fedcba9876543210', content: '8.8.8.8' },
+    ];
+
+    it('returns bulk update summary with per-item results on full success', async () => {
+      vi.mocked(CloudflareApi.updateDnsRecords).mockResolvedValueOnce([
+        { success: true, id: updateRecords[0].id, record: validRecord },
+        { success: true, id: updateRecords[1].id, record: validRecord },
+      ]);
+      const result = await callTool(server, 'update_dns_records', { records: updateRecords });
+      assertSuccessResponse(result);
+      const text = getText(result);
+      expect(text).toContain('2 succeeded');
+      expect(text).toContain('0 failed');
+    });
+
+    it('reports partial failures in per-item output', async () => {
+      vi.mocked(CloudflareApi.updateDnsRecords).mockResolvedValueOnce([
+        { success: true, id: updateRecords[0].id, record: validRecord },
+        {
+          success: false,
+          id: updateRecords[1].id,
+          error: 'Invalid DNS record ID format',
+        },
+      ]);
+      const result = await callTool(server, 'update_dns_records', { records: updateRecords });
+      assertSuccessResponse(result);
+      const text = getText(result);
+      expect(text).toContain('1 succeeded');
+      expect(text).toContain('1 failed');
+      expect(text).toContain('Invalid DNS record ID format');
+    });
+
+    it('includes the record ID in failure lines', async () => {
+      const failId = updateRecords[1].id;
+      vi.mocked(CloudflareApi.updateDnsRecords).mockResolvedValueOnce([
+        { success: true, id: updateRecords[0].id, record: validRecord },
+        { success: false, id: failId, error: 'some error' },
+      ]);
+      const text = getText(
+        await callTool(server, 'update_dns_records', { records: updateRecords }),
+      );
+      expect(text).toContain(failId);
+    });
+
+    it('wraps name and content with [EXTERNAL DATA: ...] in success lines', async () => {
+      vi.mocked(CloudflareApi.updateDnsRecords).mockResolvedValueOnce([
+        {
+          success: true,
+          id: VALID_ID,
+          record: { ...validRecord, name: 'updated.example.com', content: '9.9.9.9' },
+        },
+      ]);
+      const text = getText(
+        await callTool(server, 'update_dns_records', { records: [updateRecords[0]] }),
+      );
+      expect(text).toContain('[EXTERNAL DATA: updated.example.com]');
+      expect(text).toContain('[EXTERNAL DATA: 9.9.9.9]');
+    });
+
+    it('returns isError: true when CloudflareApi throws', async () => {
+      vi.mocked(CloudflareApi.updateDnsRecords).mockRejectedValueOnce(new Error('API down'));
+      const result = await callTool(server, 'update_dns_records', { records: updateRecords });
+      assertErrorResponse(result);
+      expect(getText(result)).toContain('Error updating DNS records');
+    });
+
+    it('rejects missing records array via Zod', async () => {
+      await expect(callTool(server, 'update_dns_records', {})).rejects.toThrow();
+    });
+
+    it('rejects empty records array via Zod', async () => {
+      await expect(callTool(server, 'update_dns_records', { records: [] })).rejects.toThrow();
+    });
+
+    it('rejects records missing id via Zod', async () => {
+      await expect(
+        callTool(server, 'update_dns_records', { records: [{ content: '1.1.1.1' }] }),
+      ).rejects.toThrow();
+    });
+
+    it('passes zone_id to updateDnsRecords', async () => {
+      vi.mocked(CloudflareApi.updateDnsRecords).mockResolvedValueOnce([]);
+      await callTool(server, 'update_dns_records', {
+        zone_id: 'custom-zone',
+        records: updateRecords,
+      }).catch(() => {});
+      expect(CloudflareApi.updateDnsRecords).toHaveBeenCalledWith(
+        expect.any(Array),
+        'custom-zone',
+      );
+    });
+  });
+
+  // ── delete_dns_records (bulk) ─────────────────────────────────────────────
+
+  describe('delete_dns_records', () => {
+    const VALID_ID_2 = 'fedcba9876543210fedcba9876543210';
+    const ids = [VALID_ID, VALID_ID_2];
+
+    it('returns bulk delete summary with per-item results on full success', async () => {
+      vi.mocked(CloudflareApi.deleteDnsRecords).mockResolvedValueOnce([
+        { success: true, id: VALID_ID },
+        { success: true, id: VALID_ID_2 },
+      ]);
+      const result = await callTool(server, 'delete_dns_records', { ids });
+      assertSuccessResponse(result);
+      const text = getText(result);
+      expect(text).toContain('2 succeeded');
+      expect(text).toContain('0 failed');
+      expect(text).toContain(VALID_ID);
+    });
+
+    it('reports partial failures in per-item output', async () => {
+      vi.mocked(CloudflareApi.deleteDnsRecords).mockResolvedValueOnce([
+        { success: true, id: VALID_ID },
+        { success: false, id: VALID_ID_2, error: 'Invalid DNS record ID format' },
+      ]);
+      const result = await callTool(server, 'delete_dns_records', { ids });
+      assertSuccessResponse(result);
+      const text = getText(result);
+      expect(text).toContain('1 succeeded');
+      expect(text).toContain('1 failed');
+      expect(text).toContain('Invalid DNS record ID format');
+    });
+
+    it('includes the record ID in both success and failure lines', async () => {
+      vi.mocked(CloudflareApi.deleteDnsRecords).mockResolvedValueOnce([
+        { success: true, id: VALID_ID },
+        { success: false, id: VALID_ID_2, error: 'some error' },
+      ]);
+      const text = getText(await callTool(server, 'delete_dns_records', { ids }));
+      expect(text).toContain(VALID_ID);
+      expect(text).toContain(VALID_ID_2);
+    });
+
+    it('returns isError: true when CloudflareApi throws', async () => {
+      vi.mocked(CloudflareApi.deleteDnsRecords).mockRejectedValueOnce(new Error('API down'));
+      const result = await callTool(server, 'delete_dns_records', { ids });
+      assertErrorResponse(result);
+      expect(getText(result)).toContain('Error deleting DNS records');
+    });
+
+    it('rejects missing ids array via Zod', async () => {
+      await expect(callTool(server, 'delete_dns_records', {})).rejects.toThrow();
+    });
+
+    it('rejects empty ids array via Zod', async () => {
+      await expect(callTool(server, 'delete_dns_records', { ids: [] })).rejects.toThrow();
+    });
+
+    it('rejects ids array containing an empty string via Zod', async () => {
+      await expect(callTool(server, 'delete_dns_records', { ids: [''] })).rejects.toThrow();
+    });
+
+    it('passes zone_id to deleteDnsRecords', async () => {
+      vi.mocked(CloudflareApi.deleteDnsRecords).mockResolvedValueOnce([]);
+      await callTool(server, 'delete_dns_records', {
+        zone_id: 'custom-zone',
+        ids,
+      }).catch(() => {});
+      expect(CloudflareApi.deleteDnsRecords).toHaveBeenCalledWith(ids, 'custom-zone');
     });
   });
 

@@ -491,4 +491,235 @@ describe('CloudflareApi', () => {
       });
     });
   });
+
+  // ── createDnsRecords (bulk) ───────────────────────────────────────────────
+
+  describe('createDnsRecords', () => {
+    const recordA = { type: 'A' as const, name: 'a.example.com', content: '1.1.1.1', ttl: 1 };
+    const recordB = { type: 'A' as const, name: 'b.example.com', content: '2.2.2.2', ttl: 1 };
+
+    it('returns an array of success results for all valid records', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(successSingleBody))
+        .mockResolvedValueOnce(mockResponse(successSingleBody));
+
+      const results = await CloudflareApi.createDnsRecords([recordA, recordB]);
+
+      expect(results).toHaveLength(2);
+      expect(results[0].success).toBe(true);
+      expect(results[1].success).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('handles partial failures - failed record returns error, others succeed', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(successSingleBody))
+        .mockResolvedValueOnce(mockResponse(failureBody));
+
+      const results = await CloudflareApi.createDnsRecords([recordA, recordB]);
+
+      expect(results).toHaveLength(2);
+      expect(results[0].success).toBe(true);
+      expect(results[1].success).toBe(false);
+      if (!results[1].success) {
+        expect(results[1].error).toContain('code 9109');
+      }
+    });
+
+    it('returns all failures when every record fails', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(failureBody))
+        .mockResolvedValueOnce(mockResponse(failureBody));
+
+      const results = await CloudflareApi.createDnsRecords([recordA, recordB]);
+
+      expect(results.every((r) => !r.success)).toBe(true);
+    });
+
+    it('returns empty array for empty input without calling fetch', async () => {
+      const results = await CloudflareApi.createDnsRecords([]);
+      expect(results).toEqual([]);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('captures Zod validation errors (invalid type) as failures without calling fetch', async () => {
+      const results = await CloudflareApi.createDnsRecords([
+        { type: 'SPF' as never, name: 'a.example.com', content: '1.1.1.1', ttl: 1 },
+      ]);
+      expect(results[0].success).toBe(false);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('returns success result with the created record object', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(successSingleBody));
+      const results = await CloudflareApi.createDnsRecords([recordA]);
+      expect(results[0].success).toBe(true);
+      if (results[0].success) {
+        expect(results[0].record.id).toBe(VALID_ID);
+      }
+    });
+
+    it('handles network errors as failures', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('network error'));
+      const results = await CloudflareApi.createDnsRecords([recordA]);
+      expect(results[0].success).toBe(false);
+    });
+  });
+
+  // ── updateDnsRecords (bulk) ───────────────────────────────────────────────
+
+  describe('updateDnsRecords', () => {
+    const VALID_ID_2 = 'fedcba9876543210fedcba9876543210';
+
+    it('returns an array of success results for all valid updates', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(successSingleBody))
+        .mockResolvedValueOnce(mockResponse(successSingleBody));
+
+      const results = await CloudflareApi.updateDnsRecords([
+        { id: VALID_ID, content: '1.1.1.1' },
+        { id: VALID_ID_2, content: '2.2.2.2' },
+      ]);
+
+      expect(results).toHaveLength(2);
+      expect(results[0].success).toBe(true);
+      expect(results[0].id).toBe(VALID_ID);
+      expect(results[1].success).toBe(true);
+      expect(results[1].id).toBe(VALID_ID_2);
+    });
+
+    it('handles partial failures - invalid ID returns error without calling fetch for that item', async () => {
+      const invalidId = 'not-a-valid-id';
+      mockFetch.mockResolvedValueOnce(mockResponse(successSingleBody));
+
+      const results = await CloudflareApi.updateDnsRecords([
+        { id: VALID_ID, content: '1.1.1.1' },
+        { id: invalidId, content: '2.2.2.2' },
+      ]);
+
+      expect(results[0].success).toBe(true);
+      expect(results[1].success).toBe(false);
+      expect(results[1].id).toBe(invalidId);
+      if (!results[1].success) {
+        expect(results[1].error).toContain('Invalid DNS record ID format');
+      }
+      // Only one fetch call because the second item fails validation before fetching
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('handles API-level failure for a valid ID', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(failureBody));
+
+      const results = await CloudflareApi.updateDnsRecords([{ id: VALID_ID }]);
+
+      expect(results[0].success).toBe(false);
+      expect(results[0].id).toBe(VALID_ID);
+      if (!results[0].success) {
+        expect(results[0].error).toContain('code 9109');
+      }
+    });
+
+    it('returns empty array for empty input without calling fetch', async () => {
+      const results = await CloudflareApi.updateDnsRecords([]);
+      expect(results).toEqual([]);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('returns success result with the updated record object', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(successSingleBody));
+      const results = await CloudflareApi.updateDnsRecords([{ id: VALID_ID, content: '9.9.9.9' }]);
+      expect(results[0].success).toBe(true);
+      if (results[0].success) {
+        expect(results[0].record.id).toBe(VALID_ID);
+      }
+    });
+
+    it('sends PATCH request for each update item', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(successSingleBody));
+      await CloudflareApi.updateDnsRecords([{ id: VALID_ID, content: '5.5.5.5' }]);
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toContain(`dns_records/${VALID_ID}`);
+      expect((opts as RequestInit).method).toBe('PATCH');
+    });
+  });
+
+  // ── deleteDnsRecords (bulk) ───────────────────────────────────────────────
+
+  describe('deleteDnsRecords', () => {
+    const VALID_ID_2 = 'fedcba9876543210fedcba9876543210';
+    const deleteSuccessBody = { success: true, errors: [], messages: [] };
+
+    it('returns an array of success results for all valid IDs', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(deleteSuccessBody))
+        .mockResolvedValueOnce(mockResponse(deleteSuccessBody));
+
+      const results = await CloudflareApi.deleteDnsRecords([VALID_ID, VALID_ID_2]);
+
+      expect(results).toHaveLength(2);
+      expect(results[0].success).toBe(true);
+      expect(results[0].id).toBe(VALID_ID);
+      expect(results[1].success).toBe(true);
+      expect(results[1].id).toBe(VALID_ID_2);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('handles partial failures - invalid ID captured as error', async () => {
+      const invalidId = 'bad-id';
+      mockFetch.mockResolvedValueOnce(mockResponse(deleteSuccessBody));
+
+      const results = await CloudflareApi.deleteDnsRecords([VALID_ID, invalidId]);
+
+      expect(results[0].success).toBe(true);
+      expect(results[1].success).toBe(false);
+      expect(results[1].id).toBe(invalidId);
+      if (!results[1].success) {
+        expect(results[1].error).toContain('Invalid DNS record ID format');
+      }
+    });
+
+    it('handles API-level failure for a valid ID', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(failureBody));
+
+      const results = await CloudflareApi.deleteDnsRecords([VALID_ID]);
+
+      expect(results[0].success).toBe(false);
+      expect(results[0].id).toBe(VALID_ID);
+      if (!results[0].success) {
+        expect(results[0].error).toContain('code 9109');
+      }
+    });
+
+    it('returns empty array for empty input without calling fetch', async () => {
+      const results = await CloudflareApi.deleteDnsRecords([]);
+      expect(results).toEqual([]);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('returns all failures when every deletion fails', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(failureBody))
+        .mockResolvedValueOnce(mockResponse(failureBody));
+
+      const results = await CloudflareApi.deleteDnsRecords([VALID_ID, VALID_ID_2]);
+
+      expect(results.every((r) => !r.success)).toBe(true);
+    });
+
+    it('sends DELETE requests to the correct endpoints', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(deleteSuccessBody))
+        .mockResolvedValueOnce(mockResponse(deleteSuccessBody));
+
+      await CloudflareApi.deleteDnsRecords([VALID_ID, VALID_ID_2]);
+
+      const [url0, opts0] = mockFetch.mock.calls[0];
+      expect(url0).toContain(`dns_records/${VALID_ID}`);
+      expect((opts0 as RequestInit).method).toBe('DELETE');
+
+      const [url1, opts1] = mockFetch.mock.calls[1];
+      expect(url1).toContain(`dns_records/${VALID_ID_2}`);
+      expect((opts1 as RequestInit).method).toBe('DELETE');
+    });
+  });
 });

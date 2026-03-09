@@ -295,4 +295,70 @@ export const CloudflareApi = {
     const endpoint = query ? `dns_records?${query}` : 'dns_records';
     return parseRecordList(await api(endpoint, 'GET', undefined, zoneId));
   },
+
+  // Bulk create DNS records - handles partial failures, returns per-item results
+  createDnsRecords: async (
+    records: CreateDnsRecord[],
+    zoneId?: string,
+  ): Promise<Array<{ success: true; record: DnsRecord } | { success: false; error: string }>> => {
+    return Promise.all(
+      records.map(async (record) => {
+        try {
+          const created = await CloudflareApi.createDnsRecord(record, zoneId);
+          return { success: true as const, record: created };
+        } catch (error) {
+          return {
+            success: false as const,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      }),
+    );
+  },
+
+  // Bulk update DNS records - handles partial failures, returns per-item results
+  updateDnsRecords: async (
+    updates: Array<{ id: string } & UpdateDnsRecord>,
+    zoneId?: string,
+  ): Promise<
+    Array<
+      { success: true; id: string; record: DnsRecord } | { success: false; id: string; error: string }
+    >
+  > => {
+    return Promise.all(
+      updates.map(async ({ id, ...fields }) => {
+        try {
+          const updated = await CloudflareApi.updateDnsRecord(id, fields, zoneId);
+          return { success: true as const, id, record: updated };
+        } catch (error) {
+          return {
+            success: false as const,
+            id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      }),
+    );
+  },
+
+  // Bulk delete DNS records - handles partial failures, returns per-item results
+  deleteDnsRecords: async (
+    ids: string[],
+    zoneId?: string,
+  ): Promise<Array<{ success: true; id: string } | { success: false; id: string; error: string }>> => {
+    return Promise.all(
+      ids.map(async (id) => {
+        try {
+          await CloudflareApi.deleteDnsRecord(id, zoneId);
+          return { success: true as const, id };
+        } catch (error) {
+          return {
+            success: false as const,
+            id,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      }),
+    );
+  },
 };
