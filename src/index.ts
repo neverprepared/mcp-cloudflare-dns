@@ -2,6 +2,14 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { CloudflareApi } from './api.js';
+import {
+  ExportDnsZoneArgs,
+  ImportDnsZoneArgs,
+  exportDnsZoneTool,
+  handleExportDnsZone,
+  handleImportDnsZone,
+  importDnsZoneTool,
+} from './tools.js';
 import { CreateDnsRecordRequest, DnsRecordType, UpdateDnsRecordRequest } from './types.js';
 
 // Zod schemas for validating incoming tool arguments
@@ -201,6 +209,8 @@ export default function createServer() {
             required: ['recordId'],
           },
         },
+        exportDnsZoneTool,
+        importDnsZoneTool,
       ],
     };
   });
@@ -231,6 +241,14 @@ export default function createServer() {
 
     if (name === 'delete_dns_record') {
       return await handleDeleteDnsRecord(DeleteDnsRecordArgs.parse(args));
+    }
+
+    if (name === 'export_dns_zone') {
+      return await handleExportDnsZone(ExportDnsZoneArgs.parse(args ?? {}));
+    }
+
+    if (name === 'import_dns_zone') {
+      return await handleImportDnsZone(ImportDnsZoneArgs.parse(args));
     }
 
     throw new Error('Unknown tool');
