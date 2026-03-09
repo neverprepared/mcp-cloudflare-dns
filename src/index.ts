@@ -2,7 +2,13 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { CloudflareApi } from './api.js';
-import { CreateDnsRecordRequest, DnsRecordType, UpdateDnsRecordRequest } from './types.js';
+import {
+  CreateDnsRecordShape,
+  DnsRecordType,
+  UpdateDnsRecordShape,
+  refineSrvCaaCreate,
+  refineSrvCaaUpdate,
+} from './types.js';
 
 // Zod schemas for validating incoming tool arguments
 const ZoneIdArg = z.object({ zone_id: z.string().optional() });
@@ -16,11 +22,11 @@ const GetDnsRecordArgs = ZoneIdArg.extend({
   recordId: z.string().min(1),
 });
 
-const CreateDnsRecordArgs = CreateDnsRecordRequest.merge(ZoneIdArg);
+const CreateDnsRecordArgs = CreateDnsRecordShape.merge(ZoneIdArg).superRefine(refineSrvCaaCreate);
 
-const UpdateDnsRecordArgs = UpdateDnsRecordRequest.merge(ZoneIdArg).extend({
-  recordId: z.string().min(1),
-});
+const UpdateDnsRecordArgs = UpdateDnsRecordShape.merge(ZoneIdArg)
+  .extend({ recordId: z.string().min(1) })
+  .superRefine(refineSrvCaaUpdate);
 
 const DeleteDnsRecordArgs = ZoneIdArg.extend({
   recordId: z.string().min(1),

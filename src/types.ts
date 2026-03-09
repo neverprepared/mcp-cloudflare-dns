@@ -3,6 +3,21 @@ import { z } from 'zod';
 // Cloudflare DNS Record types
 export const DnsRecordType = z.enum(['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR']);
 
+// Structured data for SRV records
+export const SrvData = z.object({
+  priority: z.number().int().min(0).max(65535),
+  weight: z.number().int().min(0).max(65535),
+  port: z.number().int().min(0).max(65535),
+  target: z.string().min(1),
+});
+
+// Structured data for CAA records
+export const CaaData = z.object({
+  flags: z.number().int().min(0).max(255),
+  tag: z.enum(['issue', 'issuewild', 'iodef']),
+  value: z.string(),
+});
+
 export const CloudflareDnsRecord = z.object({
   id: z.string(),
   zone_id: z.string().optional(),
@@ -49,23 +64,92 @@ export const CloudflareApiResponse = z.object({
     .optional(),
 });
 
-export const CreateDnsRecordRequest = z.object({
+// Base shapes — exported so index.ts can compose them with .merge()
+// Validation refinements are applied in the Request schemas below.
+export const CreateDnsRecordShape = z.object({
   type: DnsRecordType,
   name: z.string(),
-  content: z.string(),
+  content: z.string().optional(),
   ttl: z.number().optional().default(1),
   priority: z.number().optional(),
   proxied: z.boolean().optional(),
+  data: z.union([SrvData, CaaData, z.record(z.string(), z.unknown())]).optional(),
 });
 
-export const UpdateDnsRecordRequest = z.object({
+export const UpdateDnsRecordShape = z.object({
   type: DnsRecordType.optional(),
   name: z.string().optional(),
   content: z.string().optional(),
   ttl: z.number().optional(),
   priority: z.number().optional(),
   proxied: z.boolean().optional(),
+  data: z.union([SrvData, CaaData, z.record(z.string(), z.unknown())]).optional(),
 });
+
+// Exported refinement functions so index.ts can reuse them after .merge()
+export const refineSrvCaaCreate = (
+  val: { type: string; content?: string; data?: unknown },
+  ctx: z.RefinementCtx,
+) => {
+  if (val.type === 'SRV') {
+    const result = SrvData.safeParse(val.data);
+    if (!result.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'SRV records require data with priority (number), weight (number), port (number), and target (string)',
+        path: ['data'],
+      });
+    }
+  } else if (val.type === 'CAA') {
+    const result = CaaData.safeParse(val.data);
+    if (!result.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'CAA records require data with flags (number), tag (issue|issuewild|iodef), and value (string)',
+        path: ['data'],
+      });
+    }
+  } else if (!val.content) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'content is required for this record type',
+      path: ['content'],
+    });
+  }
+};
+
+export const refineSrvCaaUpdate = (
+  val: { type?: string; data?: unknown },
+  ctx: z.RefinementCtx,
+) => {
+  if (val.type === 'SRV' && val.data !== undefined) {
+    const result = SrvData.safeParse(val.data);
+    if (!result.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'SRV records require data with priority (number), weight (number), port (number), and target (string)',
+        path: ['data'],
+      });
+    }
+  } else if (val.type === 'CAA' && val.data !== undefined) {
+    const result = CaaData.safeParse(val.data);
+    if (!result.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'CAA records require data with flags (number), tag (issue|issuewild|iodef), and value (string)',
+        path: ['data'],
+      });
+    }
+  }
+};
+
+export const CreateDnsRecordRequest = CreateDnsRecordShape.superRefine(refineSrvCaaCreate);
+
+export const UpdateDnsRecordRequest = UpdateDnsRecordShape.superRefine(refineSrvCaaUpdate);
 
 export const CloudflareZone = z.object({
   id: z.string(),
@@ -95,3 +179,5 @@ export type ApiResponse = z.infer<typeof CloudflareApiResponse>;
 export type CreateDnsRecord = z.infer<typeof CreateDnsRecordRequest>;
 export type UpdateDnsRecord = z.infer<typeof UpdateDnsRecordRequest>;
 export type Zone = z.infer<typeof CloudflareZone>;
+export type SrvDataType = z.infer<typeof SrvData>;
+export type CaaDataType = z.infer<typeof CaaData>;
