@@ -491,4 +491,127 @@ describe('CloudflareApi', () => {
       });
     });
   });
+
+  // ── exportDnsZone ─────────────────────────────────────────────────────────
+
+  describe('exportDnsZone', () => {
+    it('returns all DNS records as an array', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(successListBody));
+      const records = await CloudflareApi.exportDnsZone();
+      expect(Array.isArray(records)).toBe(true);
+      expect(records).toHaveLength(1);
+      expect(records[0].id).toBe(VALID_ID);
+    });
+
+    it('calls dns_records endpoint with GET', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(successListBody));
+      await CloudflareApi.exportDnsZone();
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toMatch(/dns_records$/);
+      expect((opts as RequestInit).method).toBe('GET');
+    });
+
+    it('returns empty array when no records exist', async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({ success: true, errors: [], messages: [], result: [] }),
+      );
+      const records = await CloudflareApi.exportDnsZone();
+      expect(records).toEqual([]);
+    });
+
+    it('accepts an explicit zoneId override', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(successListBody));
+      await CloudflareApi.exportDnsZone('custom-zone-id');
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toContain('custom-zone-id');
+    });
+
+    it('throws sanitized error when API returns success: false', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(failureBody));
+      const err = await CloudflareApi.exportDnsZone().catch((e) => e);
+      expect(err.message).toContain('code 9109');
+      expect(err.message).not.toContain('internal secret detail');
+    });
+  });
+
+  // ── importDnsZone ─────────────────────────────────────────────────────────
+
+  describe('importDnsZone', () => {
+    const recordA = { type: 'A' as const, name: 'a.example.com', content: '1.2.3.4', ttl: 1 };
+    const recordB = { type: 'CNAME' as const, name: 'b.example.com', content: 'a.example.com', ttl: 1 };
+
+    const createdA = { ...validRecord, name: 'a.example.com' };
+    const createdB = {
+      ...validRecord,
+      id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      name: 'b.example.com',
+      type: 'CNAME' as const,
+      content: 'a.example.com',
+    };
+
+    it('creates all records and returns them in successes', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse({ success: true, errors: [], messages: [], result: createdA }))
+        .mockResolvedValueOnce(mockResponse({ success: true, errors: [], messages: [], result: createdB }));
+
+      const result = await CloudflareApi.importDnsZone([recordA, recordB]);
+      expect(result.successes).toHaveLength(2);
+      expect(result.failures).toHaveLength(0);
+      expect(result.successes[0].name).toBe('a.example.com');
+      expect(result.successes[1].name).toBe('b.example.com');
+    });
+
+    it('records a failure when API returns success: false for one record', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse({ success: true, errors: [], messages: [], result: createdA }))
+        .mockResolvedValueOnce(mockResponse(failureBody));
+
+      const result = await CloudflareApi.importDnsZone([recordA, recordB]);
+      expect(result.successes).toHaveLength(1);
+      expect(result.failures).toHaveLength(1);
+      expect(result.failures[0].record).toEqual(recordB);
+      expect(result.failures[0].error).toContain('code 9109');
+      expect(result.failures[0].error).not.toContain('internal secret detail');
+    });
+
+    it('records a failure when fetch throws for one record', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse({ success: true, errors: [], messages: [], result: createdA }))
+        .mockRejectedValueOnce(new Error('network error'));
+
+      const result = await CloudflareApi.importDnsZone([recordA, recordB]);
+      expect(result.successes).toHaveLength(1);
+      expect(result.failures).toHaveLength(1);
+      expect(result.failures[0].error).toContain('network error');
+    });
+
+    it('returns all failures when every record fails', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(failureBody))
+        .mockResolvedValueOnce(mockResponse(failureBody));
+
+      const result = await CloudflareApi.importDnsZone([recordA, recordB]);
+      expect(result.successes).toHaveLength(0);
+      expect(result.failures).toHaveLength(2);
+    });
+
+    it('returns empty successes and failures for empty input', async () => {
+      const result = await CloudflareApi.importDnsZone([]);
+      expect(result.successes).toHaveLength(0);
+      expect(result.failures).toHaveLength(0);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('sends POST requests for each record', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse({ success: true, errors: [], messages: [], result: createdA }))
+        .mockResolvedValueOnce(mockResponse({ success: true, errors: [], messages: [], result: createdB }));
+
+      await CloudflareApi.importDnsZone([recordA, recordB]);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      for (const call of mockFetch.mock.calls) {
+        expect((call[1] as RequestInit).method).toBe('POST');
+      }
+    });
+  });
 });

@@ -3,6 +3,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { z } from 'zod';
 import { CloudflareApi } from './api.js';
 import { CreateDnsRecordRequest, DnsRecordType, UpdateDnsRecordRequest } from './types.js';
+import type { CreateDnsRecord } from './types.js';
 
 // Zod schemas for validating incoming tool arguments
 const ZoneIdArg = z.object({ zone_id: z.string().optional() });
@@ -24,6 +25,12 @@ const UpdateDnsRecordArgs = UpdateDnsRecordRequest.merge(ZoneIdArg).extend({
 
 const DeleteDnsRecordArgs = ZoneIdArg.extend({
   recordId: z.string().min(1),
+});
+
+const ExportDnsZoneArgs = ZoneIdArg;
+
+const ImportDnsZoneArgs = ZoneIdArg.extend({
+  records: z.array(CreateDnsRecordRequest),
 });
 
 // Wrap external DNS record data to prevent prompt injection.
@@ -201,6 +208,58 @@ export default function createServer() {
             required: ['recordId'],
           },
         },
+        {
+          name: 'export_dns_zone',
+          description:
+            'Fetch all DNS records for a zone and return them as a JSON array. Useful for backup or migration.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              zone_id: {
+                type: 'string',
+                description: 'Cloudflare zone ID. Omit to use CLOUDFLARE_ZONE_ID env var.',
+              },
+            },
+          },
+        },
+        {
+          name: 'import_dns_zone',
+          description:
+            'Create DNS records from a JSON array of record objects. Returns a summary of successes and failures.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              zone_id: {
+                type: 'string',
+                description: 'Cloudflare zone ID. Omit to use CLOUDFLARE_ZONE_ID env var.',
+              },
+              records: {
+                type: 'array',
+                description: 'Array of DNS record objects to create',
+                items: {
+                  type: 'object',
+                  properties: {
+                    type: {
+                      type: 'string',
+                      enum: ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR'],
+                      description: 'DNS record type',
+                    },
+                    name: { type: 'string', description: 'DNS record name' },
+                    content: { type: 'string', description: 'DNS record content' },
+                    ttl: { type: 'number', description: 'TTL in seconds (default: 1 for auto)' },
+                    priority: { type: 'number', description: 'Priority (for MX records)' },
+                    proxied: {
+                      type: 'boolean',
+                      description: 'Whether to proxy through Cloudflare',
+                    },
+                  },
+                  required: ['type', 'name', 'content'],
+                },
+              },
+            },
+            required: ['records'],
+          },
+        },
       ],
     };
   });
@@ -231,6 +290,14 @@ export default function createServer() {
 
     if (name === 'delete_dns_record') {
       return await handleDeleteDnsRecord(DeleteDnsRecordArgs.parse(args));
+    }
+
+    if (name === 'export_dns_zone') {
+      return await handleExportDnsZone(ExportDnsZoneArgs.parse(args ?? {}));
+    }
+
+    if (name === 'import_dns_zone') {
+      return await handleImportDnsZone(ImportDnsZoneArgs.parse(args));
     }
 
     throw new Error('Unknown tool');
@@ -420,6 +487,73 @@ ${record.proxied ? '- Proxied through Cloudflare' : ''}`,
           {
             type: 'text',
             text: `Error deleting DNS record: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+        ],
+      };
+    }
+  };
+
+  const handleExportDnsZone = async (args: z.infer<typeof ExportDnsZoneArgs>) => {
+    try {
+      const records = await CloudflareApi.exportDnsZone(args.zone_id);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(records, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `Error exporting DNS zone: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          },
+        ],
+      };
+    }
+  };
+
+  const handleImportDnsZone = async (args: z.infer<typeof ImportDnsZoneArgs>) => {
+    try {
+      const { zone_id, records } = args;
+      const result = await CloudflareApi.importDnsZone(records as CreateDnsRecord[], zone_id);
+
+      const successCount = result.successes.length;
+      const failureCount = result.failures.length;
+      const total = successCount + failureCount;
+
+      const lines: string[] = [
+        `Import complete: ${successCount}/${total} records created successfully.`,
+      ];
+
+      if (result.failures.length > 0) {
+        lines.push('');
+        lines.push('Failures:');
+        for (const failure of result.failures) {
+          lines.push(`- ${failure.record.name} (${failure.record.type}): ${failure.error}`);
+        }
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: lines.join('\n'),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: `Error importing DNS zone: ${error instanceof Error ? error.message : 'Unknown error'}`,
           },
         ],
       };

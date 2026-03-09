@@ -11,6 +11,8 @@ vi.mock('../src/api.js', () => ({
     createDnsRecord: vi.fn(),
     updateDnsRecord: vi.fn(),
     deleteDnsRecord: vi.fn(),
+    exportDnsZone: vi.fn(),
+    importDnsZone: vi.fn(),
   },
 }));
 
@@ -376,6 +378,107 @@ describe('MCP server tool handlers', () => {
     it('does not echo back the tool name in the error', async () => {
       const err = await callTool(server, 'evil_tool_name', {}).catch(e => e);
       expect(err.message).not.toContain('evil_tool_name');
+    });
+  });
+
+  // ── export_dns_zone ───────────────────────────────────────────────────────
+
+  describe('export_dns_zone', () => {
+    it('returns records as a JSON string on success', async () => {
+      vi.mocked(CloudflareApi.exportDnsZone).mockResolvedValueOnce([validRecord]);
+      const result = await callTool(server, 'export_dns_zone', {});
+      assertSuccessResponse(result);
+      const text = getText(result);
+      const parsed = JSON.parse(text);
+      expect(Array.isArray(parsed)).toBe(true);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].id).toBe(VALID_ID);
+    });
+
+    it('returns an empty JSON array when no records exist', async () => {
+      vi.mocked(CloudflareApi.exportDnsZone).mockResolvedValueOnce([]);
+      const result = await callTool(server, 'export_dns_zone', {});
+      assertSuccessResponse(result);
+      expect(JSON.parse(getText(result))).toEqual([]);
+    });
+
+    it('passes zone_id to exportDnsZone', async () => {
+      vi.mocked(CloudflareApi.exportDnsZone).mockResolvedValueOnce([]);
+      await callTool(server, 'export_dns_zone', { zone_id: 'my-zone' });
+      expect(CloudflareApi.exportDnsZone).toHaveBeenCalledWith('my-zone');
+    });
+
+    it('returns isError: true when API throws', async () => {
+      vi.mocked(CloudflareApi.exportDnsZone).mockRejectedValueOnce(new Error('fetch failed'));
+      const result = await callTool(server, 'export_dns_zone', {});
+      assertErrorResponse(result);
+      expect(getText(result)).toContain('Error exporting DNS zone');
+    });
+  });
+
+  // ── import_dns_zone ───────────────────────────────────────────────────────
+
+  describe('import_dns_zone', () => {
+    const recordInputA = { type: 'A', name: 'a.example.com', content: '1.2.3.4' };
+    const recordInputB = { type: 'CNAME', name: 'b.example.com', content: 'a.example.com' };
+
+    it('returns a success summary when all records are created', async () => {
+      vi.mocked(CloudflareApi.importDnsZone).mockResolvedValueOnce({
+        successes: [validRecord, { ...validRecord, id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }],
+        failures: [],
+      });
+      const result = await callTool(server, 'import_dns_zone', {
+        records: [recordInputA, recordInputB],
+      });
+      assertSuccessResponse(result);
+      const text = getText(result);
+      expect(text).toContain('2/2 records created successfully');
+    });
+
+    it('includes failure details when some records fail', async () => {
+      vi.mocked(CloudflareApi.importDnsZone).mockResolvedValueOnce({
+        successes: [validRecord],
+        failures: [{ record: { type: 'CNAME', name: 'b.example.com', content: 'a.example.com', ttl: 1 }, error: 'code 1234' }],
+      });
+      const result = await callTool(server, 'import_dns_zone', {
+        records: [recordInputA, recordInputB],
+      });
+      assertSuccessResponse(result);
+      const text = getText(result);
+      expect(text).toContain('1/2 records created successfully');
+      expect(text).toContain('Failures:');
+      expect(text).toContain('b.example.com');
+      expect(text).toContain('code 1234');
+    });
+
+    it('passes zone_id to importDnsZone', async () => {
+      vi.mocked(CloudflareApi.importDnsZone).mockResolvedValueOnce({ successes: [], failures: [] });
+      await callTool(server, 'import_dns_zone', { records: [], zone_id: 'my-zone' });
+      expect(CloudflareApi.importDnsZone).toHaveBeenCalledWith([], 'my-zone');
+    });
+
+    it('shows 0/0 for empty records input', async () => {
+      vi.mocked(CloudflareApi.importDnsZone).mockResolvedValueOnce({ successes: [], failures: [] });
+      const result = await callTool(server, 'import_dns_zone', { records: [] });
+      assertSuccessResponse(result);
+      expect(getText(result)).toContain('0/0 records created successfully');
+    });
+
+    it('returns isError: true when importDnsZone throws', async () => {
+      vi.mocked(CloudflareApi.importDnsZone).mockRejectedValueOnce(new Error('zone error'));
+      const result = await callTool(server, 'import_dns_zone', { records: [recordInputA] });
+      assertErrorResponse(result);
+      expect(getText(result)).toContain('Error importing DNS zone');
+    });
+
+    it('rejects missing records field via Zod', async () => {
+      await expect(callTool(server, 'import_dns_zone', {})).rejects.toThrow();
+    });
+
+    it('rejects a record with missing content via Zod', async () => {
+      await expect(
+        callTool(server, 'import_dns_zone', { records: [{ type: 'A', name: 'x.com' }] }),
+      ).rejects.toThrow();
     });
   });
 });
