@@ -295,4 +295,55 @@ export const CloudflareApi = {
     const endpoint = query ? `dns_records?${query}` : 'dns_records';
     return parseRecordList(await api(endpoint, 'GET', undefined, zoneId));
   },
+
+  // Create multiple DNS records, returning per-record success/failure results
+  createDnsRecords: async (
+    records: CreateDnsRecord[],
+    zoneId?: string,
+  ): Promise<{ record?: DnsRecord; error?: string }[]> => {
+    return Promise.all(
+      records.map(async (record) => {
+        try {
+          const created = await CloudflareApi.createDnsRecord(record, zoneId);
+          return { record: created };
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : 'Unknown error' };
+        }
+      }),
+    );
+  },
+
+  // Update multiple DNS records, returning per-record success/failure results
+  updateDnsRecords: async (
+    updates: Array<{ id: string } & UpdateDnsRecord>,
+    zoneId?: string,
+  ): Promise<{ id: string; record?: DnsRecord; error?: string }[]> => {
+    return Promise.all(
+      updates.map(async ({ id, ...fields }) => {
+        try {
+          const updated = await CloudflareApi.updateDnsRecord(id, fields, zoneId);
+          return { id, record: updated };
+        } catch (err) {
+          return { id, error: err instanceof Error ? err.message : 'Unknown error' };
+        }
+      }),
+    );
+  },
+
+  // Delete multiple DNS records, returning per-record success/failure results
+  deleteDnsRecords: async (
+    recordIds: string[],
+    zoneId?: string,
+  ): Promise<{ id: string; success: boolean; error?: string }[]> => {
+    return Promise.all(
+      recordIds.map(async (id) => {
+        try {
+          await CloudflareApi.deleteDnsRecord(id, zoneId);
+          return { id, success: true };
+        } catch (err) {
+          return { id, success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+        }
+      }),
+    );
+  },
 };
