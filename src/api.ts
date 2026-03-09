@@ -27,6 +27,75 @@ const sanitizeApiErrors = (errors: { code: number; message: string }[]): string 
   return `Cloudflare API request failed (${codes})`;
 };
 
+// Thrown when all retry attempts are exhausted for a retryable HTTP error.
+export class CloudflareRetryError extends Error {
+  public readonly attempts: number;
+  public readonly lastStatus: number;
+
+  constructor(message: string, attempts: number, lastStatus: number) {
+    super(message);
+    this.name = 'CloudflareRetryError';
+    this.attempts = attempts;
+    this.lastStatus = lastStatus;
+  }
+}
+
+// Retry configuration
+const RETRY_BASE_MS = 500;
+const RETRY_CAP_MS = 10_000;
+const MAX_RETRIES = 3;
+
+const shouldRetry = (status: number): boolean => status === 429 || (status >= 500 && status <= 599);
+
+// Exponential backoff with full jitter: random in [0, min(cap, base * 2^attempt)]
+const computeDelay = (attempt: number): number => {
+  const exponential = Math.min(RETRY_CAP_MS, RETRY_BASE_MS * 2 ** attempt);
+  return Math.floor(Math.random() * exponential);
+};
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Wraps fetch with retry logic for HTTP 429 and 5xx responses.
+// Retries up to MAX_RETRIES times with exponential backoff and optional Retry-After header support.
+const fetchWithRetry = async (url: string, options: RequestInit): Promise<Response> => {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(url, options);
+
+    if (!shouldRetry(response.status)) {
+      return response;
+    }
+
+    if (attempt === MAX_RETRIES) {
+      throw new CloudflareRetryError(
+        `Cloudflare API request failed after ${MAX_RETRIES + 1} attempts (last status: ${response.status})`,
+        MAX_RETRIES + 1,
+        response.status,
+      );
+    }
+
+    const retryAfterHeader = response.headers.get('Retry-After');
+    let delayMs: number;
+    if (retryAfterHeader !== null) {
+      const seconds = Number(retryAfterHeader);
+      delayMs =
+        Number.isFinite(seconds) && seconds > 0
+          ? Math.min(seconds * 1000, RETRY_CAP_MS)
+          : computeDelay(attempt);
+    } else {
+      delayMs = computeDelay(attempt);
+    }
+
+    await sleep(delayMs);
+  }
+
+  // Unreachable: the loop always returns or throws before exhausting attempts.
+  throw new CloudflareRetryError(
+    `Cloudflare API request failed after ${MAX_RETRIES + 1} attempts`,
+    MAX_RETRIES + 1,
+    0,
+  );
+};
+
 // Configuration for Cloudflare API
 const cloudflareConfig: {
   apiToken: string;
@@ -88,7 +157,7 @@ const accountApi = async (endpoint: string) => {
 
   try {
     const url = `https://api.cloudflare.com/client/v4/${endpoint}`;
-    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+    const response = await fetchWithRetry(url, { method: 'GET', headers, signal: controller.signal });
 
     if (!response.ok) {
       throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}`);
@@ -96,6 +165,9 @@ const accountApi = async (endpoint: string) => {
 
     return response;
   } catch (error) {
+    if (error instanceof CloudflareRetryError) {
+      throw error;
+    }
     if (error instanceof Error) {
       if (error.name === 'AbortError') throw new Error('Cloudflare API request timed out');
       throw new Error(`Cloudflare API error: ${error.message}`);
@@ -127,7 +199,7 @@ const api = async (
   try {
     const url = `https://api.cloudflare.com/client/v4/zones/${resolvedZoneId}/${endpoint}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
@@ -140,6 +212,9 @@ const api = async (
 
     return response;
   } catch (error) {
+    if (error instanceof CloudflareRetryError) {
+      throw error;
+    }
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
         throw new Error('Cloudflare API request timed out');

@@ -41,8 +41,25 @@ const failureBody = {
   messages: [],
 };
 
+// Helper to build a mock retryable response with headers support
+const mockRetryableResponse = (
+  status: number,
+  statusText: string,
+  retryAfter?: string,
+) => ({
+  ok: false,
+  status,
+  statusText,
+  headers: {
+    get: (name: string) =>
+      name.toLowerCase() === 'retry-after' && retryAfter !== undefined ? retryAfter : null,
+  },
+  json: vi.fn().mockResolvedValue({}),
+});
+
 describe('CloudflareApi', () => {
   let CloudflareApi: typeof import('../src/api.js').CloudflareApi;
+  let CloudflareRetryError: typeof import('../src/api.js').CloudflareRetryError;
   let mockFetch: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
@@ -54,6 +71,7 @@ describe('CloudflareApi', () => {
 
     const mod = await import('../src/api.js');
     CloudflareApi = mod.CloudflareApi;
+    CloudflareRetryError = mod.CloudflareRetryError;
 
     mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
@@ -489,6 +507,107 @@ describe('CloudflareApi', () => {
       expect((opts as RequestInit).headers).toMatchObject({
         Authorization: 'Bearer my-custom-token',
       });
+    });
+  });
+
+  // ── retry logic ───────────────────────────────────────────────────────────
+
+  describe('retry logic', () => {
+    it('retries on 429 and succeeds after one failure', async () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      mockFetch
+        .mockResolvedValueOnce(mockRetryableResponse(429, 'Too Many Requests'))
+        .mockResolvedValueOnce(mockResponse(successListBody));
+
+      const records = await CloudflareApi.listDnsRecords();
+
+      expect(records).toHaveLength(1);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries on 500 and succeeds after one failure', async () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      mockFetch
+        .mockResolvedValueOnce(mockRetryableResponse(500, 'Internal Server Error'))
+        .mockResolvedValueOnce(mockResponse(successListBody));
+
+      const records = await CloudflareApi.listDnsRecords();
+
+      expect(records).toHaveLength(1);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('throws CloudflareRetryError when max retries are exceeded', async () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      mockFetch.mockResolvedValue(mockRetryableResponse(429, 'Too Many Requests'));
+
+      await expect(CloudflareApi.listDnsRecords()).rejects.toThrow(CloudflareRetryError);
+      // 1 initial attempt + 3 retries = 4 total calls
+      expect(mockFetch).toHaveBeenCalledTimes(4);
+    });
+
+    it('CloudflareRetryError contains correct attempts and lastStatus', async () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      mockFetch.mockResolvedValue(mockRetryableResponse(503, 'Service Unavailable'));
+
+      const err = await CloudflareApi.listDnsRecords().catch((e) => e);
+      expect(err).toBeInstanceOf(CloudflareRetryError);
+      expect(err.attempts).toBe(4);
+      expect(err.lastStatus).toBe(503);
+    });
+
+    it('does not retry on 4xx errors other than 429', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({}, false, 400, 'Bad Request'));
+
+      await expect(CloudflareApi.listDnsRecords()).rejects.toThrow('400');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry on 403 Forbidden', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({}, false, 403, 'Forbidden'));
+
+      await expect(CloudflareApi.listDnsRecords()).rejects.toThrow('403');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('respects Retry-After header delay on 429', async () => {
+      vi.useFakeTimers();
+
+      mockFetch
+        .mockResolvedValueOnce(mockRetryableResponse(429, 'Too Many Requests', '2'))
+        .mockResolvedValueOnce(mockResponse(successListBody));
+
+      const promise = CloudflareApi.listDnsRecords();
+      // Advance past the 2-second Retry-After delay (well under the 15s abort timeout)
+      await vi.advanceTimersByTimeAsync(2001);
+      const records = await promise;
+
+      expect(records).toHaveLength(1);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
+    });
+
+    it('caps Retry-After delay at RETRY_CAP_MS (10s)', async () => {
+      vi.useFakeTimers();
+      const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
+      mockFetch
+        .mockResolvedValueOnce(mockRetryableResponse(429, 'Too Many Requests', '60'))
+        .mockResolvedValueOnce(mockResponse(successListBody));
+
+      const promise = CloudflareApi.listDnsRecords();
+      // Advance past the capped 10-second delay
+      await vi.advanceTimersByTimeAsync(10001);
+      await promise;
+
+      // Find the retry delay call (not the 15s abort timer)
+      const delayCalls = setTimeoutSpy.mock.calls.filter(
+        ([, delay]) => delay !== undefined && (delay as number) < 15000,
+      );
+      expect(delayCalls.some(([, delay]) => delay === 10000)).toBe(true);
+
+      vi.useRealTimers();
     });
   });
 });
