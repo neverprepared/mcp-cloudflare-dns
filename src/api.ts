@@ -181,17 +181,20 @@ const parseRecordList = async (response: Response): Promise<DnsRecord[]> => {
   }
   if (!data.result) return [];
   const records = Array.isArray(data.result) ? data.result : [data.result];
-  const filtered = records.filter((record) => record !== null);
+  return records.filter((record) => record !== null);
+};
 
-  // Warn when Cloudflare's pagination indicates more records exist than were returned.
-  // The API returns at most 100 records per page by default.
-  if (data.result_info && data.result_info.total_count > filtered.length) {
-    console.error(
-      `Warning: only ${filtered.length} of ${data.result_info.total_count} DNS records returned. Pagination is not yet implemented; some records may be missing.`,
-    );
+// Shared helper: extract records and result_info from a parsed API response.
+const extractPage = (
+  data: Awaited<ReturnType<typeof parseApiResponse>>,
+): { records: DnsRecord[]; totalCount: number } => {
+  if (!data.success) {
+    throw new Error(sanitizeApiErrors(data.errors));
   }
-
-  return filtered;
+  const raw = data.result ? (Array.isArray(data.result) ? data.result : [data.result]) : [];
+  const records = raw.filter((r): r is DnsRecord => r !== null);
+  const totalCount = data.result_info?.total_count ?? records.length;
+  return { records, totalCount };
 };
 
 export const CloudflareApi = {
@@ -212,9 +215,42 @@ export const CloudflareApi = {
     return data.result ?? [];
   },
 
-  // List all DNS records
-  listDnsRecords: async (zoneId?: string): Promise<DnsRecord[]> => {
-    return parseRecordList(await api('dns_records', 'GET', undefined, zoneId));
+  // List DNS records with optional pagination.
+  // When `page` is omitted all pages are fetched automatically and combined.
+  // `per_page` controls the page size sent to the Cloudflare API (default 100).
+  listDnsRecords: async (zoneId?: string, page?: number, per_page?: number): Promise<DnsRecord[]> => {
+    const pageSize = per_page ?? 100;
+
+    // Build query string for the first (or only) request.
+    const buildEndpoint = (p: number) => {
+      const qs = new URLSearchParams({ page: String(p), per_page: String(pageSize) });
+      return `dns_records?${qs}`;
+    };
+
+    const firstData = await parseApiResponse(
+      await api(buildEndpoint(page ?? 1), 'GET', undefined, zoneId),
+    );
+    const { records: firstRecords, totalCount } = extractPage(firstData);
+
+    // If the caller requested a specific page, return just that page.
+    if (page !== undefined) {
+      return firstRecords;
+    }
+
+    // Auto-fetch remaining pages until all records are collected.
+    const allRecords: DnsRecord[] = [...firstRecords];
+    let currentPage = 2;
+    while (allRecords.length < totalCount) {
+      const nextData = await parseApiResponse(
+        await api(buildEndpoint(currentPage), 'GET', undefined, zoneId),
+      );
+      const { records: nextRecords } = extractPage(nextData);
+      if (nextRecords.length === 0) break;
+      allRecords.push(...nextRecords);
+      currentPage++;
+    }
+
+    return allRecords;
   },
 
   // Get a specific DNS record by ID

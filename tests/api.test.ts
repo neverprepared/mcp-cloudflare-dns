@@ -211,6 +211,112 @@ describe('CloudflareApi', () => {
       expect(records[0].id).toBe(VALID_ID);
     });
 
+    // ── pagination ──────────────────────────────────────────────────────────
+
+    it('single-page: returns all records when total_count equals page count', async () => {
+      const body = {
+        ...successListBody,
+        result_info: { page: 1, per_page: 100, count: 1, total_count: 1 },
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(body));
+      const records = await CloudflareApi.listDnsRecords();
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(records).toHaveLength(1);
+      expect(records[0].id).toBe(VALID_ID);
+    });
+
+    it('multi-page: auto-fetches subsequent pages and concatenates results', async () => {
+      const secondId = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      const secondRecord = { ...validRecord, id: secondId };
+
+      const page1Body = {
+        success: true,
+        errors: [],
+        messages: [],
+        result: [validRecord],
+        result_info: { page: 1, per_page: 1, count: 1, total_count: 2 },
+      };
+      const page2Body = {
+        success: true,
+        errors: [],
+        messages: [],
+        result: [secondRecord],
+        result_info: { page: 2, per_page: 1, count: 1, total_count: 2 },
+      };
+
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(page1Body))
+        .mockResolvedValueOnce(mockResponse(page2Body));
+
+      const records = await CloudflareApi.listDnsRecords();
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(records).toHaveLength(2);
+      expect(records[0].id).toBe(VALID_ID);
+      expect(records[1].id).toBe(secondId);
+    });
+
+    it('multi-page: passes per_page param to each request', async () => {
+      const secondId = 'cccccccccccccccccccccccccccccccc';
+      const secondRecord = { ...validRecord, id: secondId };
+
+      const page1Body = {
+        success: true, errors: [], messages: [],
+        result: [validRecord],
+        result_info: { page: 1, per_page: 1, count: 1, total_count: 2 },
+      };
+      const page2Body = {
+        success: true, errors: [], messages: [],
+        result: [secondRecord],
+        result_info: { page: 2, per_page: 1, count: 1, total_count: 2 },
+      };
+
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(page1Body))
+        .mockResolvedValueOnce(mockResponse(page2Body));
+
+      await CloudflareApi.listDnsRecords(undefined, undefined, 1);
+      const [url1] = mockFetch.mock.calls[0];
+      const [url2] = mockFetch.mock.calls[1];
+      expect(url1).toContain('per_page=1');
+      expect(url1).toContain('page=1');
+      expect(url2).toContain('per_page=1');
+      expect(url2).toContain('page=2');
+    });
+
+    it('specific page: fetches only the requested page without further requests', async () => {
+      const body = {
+        ...successListBody,
+        result_info: { page: 2, per_page: 100, count: 1, total_count: 150 },
+      };
+      mockFetch.mockResolvedValueOnce(mockResponse(body));
+      const records = await CloudflareApi.listDnsRecords(undefined, 2);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toContain('page=2');
+      expect(records).toHaveLength(1);
+    });
+
+    it('error propagation: throws on API error during first page', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(failureBody));
+      await expect(CloudflareApi.listDnsRecords()).rejects.toThrow('Cloudflare API request failed');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('error propagation: throws on API error during a subsequent page', async () => {
+      const page1Body = {
+        success: true, errors: [], messages: [],
+        result: [validRecord],
+        result_info: { page: 1, per_page: 1, count: 1, total_count: 2 },
+      };
+
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(page1Body))
+        .mockResolvedValueOnce(mockResponse(failureBody));
+
+      await expect(CloudflareApi.listDnsRecords()).rejects.toThrow('Cloudflare API request failed');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
     it('returns empty array when result is null', async () => {
       mockFetch.mockResolvedValueOnce(
         mockResponse({ success: true, errors: [], messages: [], result: null })
