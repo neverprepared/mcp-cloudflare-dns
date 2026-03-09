@@ -263,6 +263,98 @@ describe('CloudflareApi', () => {
         Authorization: 'Bearer test-token',
       });
     });
+
+    it('includes page and per_page query params in the request URL', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(successListBody));
+      await CloudflareApi.listDnsRecords();
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toContain('page=1');
+      expect(url).toContain('per_page=100');
+    });
+  });
+
+  // ── listDnsRecords pagination ─────────────────────────────────────────────
+
+  describe('listDnsRecords pagination', () => {
+    const record1 = { ...validRecord, id: 'a'.repeat(32) };
+    const record2 = { ...validRecord, id: 'b'.repeat(32) };
+    const record3 = { ...validRecord, id: 'c'.repeat(32) };
+
+    const pageBody = (
+      records: typeof validRecord[],
+      page: number,
+      count: number,
+      perPage: number,
+      total: number,
+    ) => ({
+      success: true,
+      errors: [],
+      messages: [],
+      result: records,
+      result_info: { page, per_page: perPage, count, total_count: total },
+    });
+
+    it('makes only one request when count < per_page on the first page', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse(pageBody([record1], 1, 1, 100, 1)));
+      const records = await CloudflareApi.listDnsRecords();
+      expect(records).toHaveLength(1);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('fetches two pages and concatenates all records', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(pageBody([record1, record2], 1, 2, 2, 3)))
+        .mockResolvedValueOnce(mockResponse(pageBody([record3], 2, 1, 2, 3)));
+
+      const records = await CloudflareApi.listDnsRecords();
+      expect(records).toHaveLength(3);
+      expect(records[0].id).toBe('a'.repeat(32));
+      expect(records[1].id).toBe('b'.repeat(32));
+      expect(records[2].id).toBe('c'.repeat(32));
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('requests page=2 on the second fetch', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(pageBody([record1, record2], 1, 2, 2, 3)))
+        .mockResolvedValueOnce(mockResponse(pageBody([record3], 2, 1, 2, 3)));
+
+      await CloudflareApi.listDnsRecords();
+      const [url1] = mockFetch.mock.calls[0];
+      const [url2] = mockFetch.mock.calls[1];
+      expect(url1).toContain('page=1');
+      expect(url2).toContain('page=2');
+    });
+
+    it('handles three pages correctly', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(pageBody([record1], 1, 2, 2, 5)))
+        .mockResolvedValueOnce(mockResponse(pageBody([record2, record3], 2, 2, 2, 5)))
+        .mockResolvedValueOnce(
+          mockResponse(pageBody([{ ...validRecord, id: 'd'.repeat(32) }, { ...validRecord, id: 'e'.repeat(32) }], 3, 1, 2, 5)),
+        );
+
+      const records = await CloudflareApi.listDnsRecords();
+      expect(records).toHaveLength(5);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('stops immediately when result is null on first page', async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({ success: true, errors: [], messages: [], result: null }),
+      );
+      const records = await CloudflareApi.listDnsRecords();
+      expect(records).toEqual([]);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws when a paginated page returns success: false', async () => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(pageBody([record1, record2], 1, 2, 2, 3)))
+        .mockResolvedValueOnce(mockResponse({ success: false, errors: [{ code: 9109, message: 'err' }], messages: [] }));
+
+      await expect(CloudflareApi.listDnsRecords()).rejects.toThrow('Cloudflare API request failed');
+    });
   });
 
   // ── getDnsRecord ──────────────────────────────────────────────────────────
@@ -398,11 +490,15 @@ describe('CloudflareApi', () => {
   // ── findDnsRecords ────────────────────────────────────────────────────────
 
   describe('findDnsRecords', () => {
-    it('calls dns_records with no query string when no filters', async () => {
+    it('includes pagination params but no filter params when no filters provided', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(successListBody));
       await CloudflareApi.findDnsRecords();
       const [url] = mockFetch.mock.calls[0];
-      expect(url).toMatch(/dns_records$/);
+      expect(url).toContain('dns_records');
+      expect(url).toContain('page=1');
+      expect(url).toContain('per_page=100');
+      expect(url).not.toContain('name=');
+      expect(url).not.toContain('type=');
     });
 
     it('appends name filter as query param', async () => {

@@ -173,25 +173,41 @@ const parseApiResponse = async (response: Response) => {
   }
 };
 
-// Shared helper: parse a list response and return DnsRecord[].
-const parseRecordList = async (response: Response): Promise<DnsRecord[]> => {
-  const data = await parseApiResponse(response);
-  if (!data.success) {
-    throw new Error(sanitizeApiErrors(data.errors));
-  }
-  if (!data.result) return [];
-  const records = Array.isArray(data.result) ? data.result : [data.result];
-  const filtered = records.filter((record) => record !== null);
+// Fetch all pages of DNS records from an endpoint, concatenating results.
+// Cloudflare returns at most 100 records per page; this loops until the last page.
+const fetchAllDnsRecordPages = async (
+  baseEndpoint: string,
+  queryParams: URLSearchParams,
+  zoneId?: string,
+): Promise<DnsRecord[]> => {
+  const allRecords: DnsRecord[] = [];
+  let page = 1;
 
-  // Warn when Cloudflare's pagination indicates more records exist than were returned.
-  // The API returns at most 100 records per page by default.
-  if (data.result_info && data.result_info.total_count > filtered.length) {
-    console.error(
-      `Warning: only ${filtered.length} of ${data.result_info.total_count} DNS records returned. Pagination is not yet implemented; some records may be missing.`,
-    );
+  while (true) {
+    const params = new URLSearchParams(queryParams);
+    params.set('page', String(page));
+    params.set('per_page', '100');
+    const response = await api(`${baseEndpoint}?${params.toString()}`, 'GET', undefined, zoneId);
+    const data = await parseApiResponse(response);
+
+    if (!data.success) {
+      throw new Error(sanitizeApiErrors(data.errors));
+    }
+
+    if (!data.result) break;
+    const records = Array.isArray(data.result) ? data.result : [data.result];
+    const filtered = records.filter((record) => record !== null);
+    allRecords.push(...filtered);
+
+    // Stop when: no pagination info, empty page, or partial page (signals last page)
+    if (!data.result_info || filtered.length === 0 || data.result_info.count < data.result_info.per_page) {
+      break;
+    }
+
+    page++;
   }
 
-  return filtered;
+  return allRecords;
 };
 
 export const CloudflareApi = {
@@ -212,9 +228,9 @@ export const CloudflareApi = {
     return data.result ?? [];
   },
 
-  // List all DNS records
+  // List all DNS records with automatic pagination
   listDnsRecords: async (zoneId?: string): Promise<DnsRecord[]> => {
-    return parseRecordList(await api('dns_records', 'GET', undefined, zoneId));
+    return fetchAllDnsRecordPages('dns_records', new URLSearchParams(), zoneId);
   },
 
   // Get a specific DNS record by ID
@@ -286,13 +302,11 @@ export const CloudflareApi = {
     }
   },
 
-  // Find DNS records by name and/or type
+  // Find DNS records by name and/or type with automatic pagination
   findDnsRecords: async (name?: string, type?: string, zoneId?: string): Promise<DnsRecord[]> => {
     const params = new URLSearchParams();
     if (name) params.append('name', name);
     if (type) params.append('type', type);
-    const query = params.toString();
-    const endpoint = query ? `dns_records?${query}` : 'dns_records';
-    return parseRecordList(await api(endpoint, 'GET', undefined, zoneId));
+    return fetchAllDnsRecordPages('dns_records', params, zoneId);
   },
 };
