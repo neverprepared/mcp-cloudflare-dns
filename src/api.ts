@@ -295,4 +295,41 @@ export const CloudflareApi = {
     const endpoint = query ? `dns_records?${query}` : 'dns_records';
     return parseRecordList(await api(endpoint, 'GET', undefined, zoneId));
   },
+
+  // Export all DNS records for a zone as a raw array (for bulk operations / backups)
+  exportDnsZone: async (zoneId?: string): Promise<DnsRecord[]> => {
+    return parseRecordList(await api('dns_records', 'GET', undefined, zoneId));
+  },
+
+  // Import DNS records in bulk; returns per-record success/failure summary
+  importDnsZone: async (
+    records: CreateDnsRecord[],
+    zoneId?: string,
+  ): Promise<{ succeeded: DnsRecord[]; failed: { record: CreateDnsRecord; error: string }[] }> => {
+    const succeeded: DnsRecord[] = [];
+    const failed: { record: CreateDnsRecord; error: string }[] = [];
+
+    for (const record of records) {
+      try {
+        const validatedRecord = CreateDnsRecordRequest.parse(record);
+        const data = await parseApiResponse(
+          await api('dns_records', 'POST', validatedRecord, zoneId),
+        );
+        if (!data.success) {
+          throw new Error(sanitizeApiErrors(data.errors));
+        }
+        if (!data.result || Array.isArray(data.result)) {
+          throw new Error('Failed to create DNS record');
+        }
+        succeeded.push(data.result);
+      } catch (error) {
+        failed.push({
+          record,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    return { succeeded, failed };
+  },
 };
