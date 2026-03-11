@@ -594,6 +594,152 @@ describe('CloudflareApi', () => {
     });
   });
 
+  // ── pagination warning ────────────────────────────────────────────────────
+
+  describe('pagination warning', () => {
+    it('logs a warning when total_count exceeds returned records', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({
+          success: true,
+          errors: [],
+          messages: [],
+          result: [validRecord],
+          result_info: { page: 1, per_page: 100, count: 1, total_count: 200 },
+        }),
+      );
+      await CloudflareApi.listDnsRecords();
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining('Pagination is not yet implemented'));
+      spy.mockRestore();
+    });
+
+    it('does not log a warning when all records are returned', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({
+          success: true,
+          errors: [],
+          messages: [],
+          result: [validRecord],
+          result_info: { page: 1, per_page: 100, count: 1, total_count: 1 },
+        }),
+      );
+      await CloudflareApi.listDnsRecords();
+      expect(spy).not.toHaveBeenCalledWith(expect.stringContaining('Pagination'));
+      spy.mockRestore();
+    });
+  });
+
+  // ── listZones JSON parse error ────────────────────────────────────────────
+
+  describe('listZones JSON parse error', () => {
+    it('throws when response body is not valid JSON', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected token')),
+      });
+      await expect(CloudflareApi.listZones()).rejects.toThrow(
+        'Failed to parse Cloudflare zones response as JSON',
+      );
+    });
+  });
+
+  // ── createDnsRecord null result ───────────────────────────────────────────
+
+  describe('createDnsRecord null result', () => {
+    it('throws when API returns success: true but result is null', async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({ success: true, errors: [], messages: [], result: null }),
+      );
+      await expect(
+        CloudflareApi.createDnsRecord({ type: 'A', name: 'x.com', content: '1.1.1.1', ttl: 1 }),
+      ).rejects.toThrow('Failed to create DNS record');
+    });
+  });
+
+  // ── updateDnsRecord null result ───────────────────────────────────────────
+
+  describe('updateDnsRecord null result', () => {
+    it('throws when API returns success: true but result is null', async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({ success: true, errors: [], messages: [], result: null }),
+      );
+      await expect(CloudflareApi.updateDnsRecord(VALID_ID, { content: '9.9.9.9' })).rejects.toThrow(
+        'Failed to update DNS record',
+      );
+    });
+  });
+
+  // ── importDnsZone non-Error exception ─────────────────────────────────────
+
+  describe('importDnsZone non-Error exception', () => {
+    it('records "Unknown error" when fetch throws a non-Error value', async () => {
+      mockFetch.mockRejectedValueOnce('raw string error');
+      const result = await CloudflareApi.importDnsZone([
+        { type: 'A', name: 'x.com', content: '1.1.1.1', ttl: 1 },
+      ]);
+      expect(result.failed).toHaveLength(1);
+      expect(result.failed[0].error).toBe('Unknown error');
+    });
+  });
+
+  // ── missing API token / zone ID ──────────────────────────────────────────
+
+  describe('missing credentials', () => {
+    it('throws when API token is not configured', async () => {
+      vi.resetModules();
+      vi.stubEnv('CLOUDFLARE_API_TOKEN', '');
+      vi.stubEnv('CLOUDFLARE_ZONE_ID', '');
+      const mod = await import('../src/api.js');
+      // listZones uses accountApi which checks token before zone
+      await expect(mod.CloudflareApi.listZones()).rejects.toThrow(
+        'Cloudflare API Token not configured',
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('throws when no zone ID is configured and none is passed', async () => {
+      vi.resetModules();
+      vi.stubEnv('CLOUDFLARE_API_TOKEN', 'test-token');
+      vi.stubEnv('CLOUDFLARE_ZONE_ID', '');
+      const mod = await import('../src/api.js');
+      await expect(mod.CloudflareApi.listDnsRecords()).rejects.toThrow(
+        'No zone ID provided',
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── listZones HTTP / non-Error errors ────────────────────────────────────
+
+  describe('listZones HTTP error', () => {
+    it('throws when accountApi response is not ok', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({}, false, 401, 'Unauthorized'));
+      await expect(CloudflareApi.listZones()).rejects.toThrow('401');
+    });
+
+    it('re-throws non-Error exceptions from accountApi fetch', async () => {
+      mockFetch.mockRejectedValueOnce('raw network failure');
+      await expect(CloudflareApi.listZones()).rejects.toBe('raw network failure');
+    });
+  });
+
+  // ── importDnsZone null result ─────────────────────────────────────────────
+
+  describe('importDnsZone null result', () => {
+    it('records a failed entry when create returns success: true but null result', async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({ success: true, errors: [], messages: [], result: null }),
+      );
+      const result = await CloudflareApi.importDnsZone([
+        { type: 'A', name: 'x.com', content: '1.1.1.1', ttl: 1 },
+      ]);
+      expect(result.succeeded).toHaveLength(0);
+      expect(result.failed).toHaveLength(1);
+      expect(result.failed[0].error).toContain('Failed to create DNS record');
+    });
+  });
+
   // ── configure / credential handling ──────────────────────────────────────
 
   describe('configure', () => {

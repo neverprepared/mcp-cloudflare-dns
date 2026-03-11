@@ -41,6 +41,14 @@ const callTool = async (server: ReturnType<typeof createServer>, name: string, a
   return handler({ method: 'tools/call', params: { name, arguments: args } });
 };
 
+// Drive list_tools calls through the server's registered request handler
+const listTools = async (server: ReturnType<typeof createServer>) => {
+  const handler = (server as unknown as { _requestHandlers: Map<string, (req: unknown) => Promise<unknown>> })
+    ._requestHandlers.get('tools/list');
+  if (!handler) throw new Error('tools/list handler not registered');
+  return handler({ method: 'tools/list', params: {} }) as Promise<{ tools: { name: string; description: string; inputSchema: unknown }[] }>;
+};
+
 describe('MCP server tool handlers', () => {
   let server: ReturnType<typeof createServer>;
 
@@ -472,6 +480,57 @@ describe('MCP server tool handlers', () => {
       await expect(
         callTool(server, 'import_dns_zone', { records: [{ type: 'SPF', name: 'x.com', content: 'v=spf1' }] }),
       ).rejects.toThrow();
+    });
+  });
+
+  // ── list_tools ────────────────────────────────────────────────────────────
+
+  describe('list_tools', () => {
+    it('returns all 8 expected tools', async () => {
+      const result = await listTools(server);
+      expect(Array.isArray(result.tools)).toBe(true);
+      expect(result.tools).toHaveLength(8);
+    });
+
+    it('includes list_zones tool with no required fields', async () => {
+      const result = await listTools(server);
+      const tool = result.tools.find((t) => t.name === 'list_zones');
+      expect(tool).toBeDefined();
+      expect(tool?.description).toContain('zone');
+    });
+
+    it('includes list_dns_records tool', async () => {
+      const result = await listTools(server);
+      expect(result.tools.map((t) => t.name)).toContain('list_dns_records');
+    });
+
+    it('includes create_dns_record with type, name, content as required', async () => {
+      const result = await listTools(server);
+      const tool = result.tools.find((t) => t.name === 'create_dns_record');
+      expect(tool).toBeDefined();
+      const schema = tool?.inputSchema as { required?: string[] };
+      expect(schema.required).toContain('type');
+      expect(schema.required).toContain('name');
+      expect(schema.required).toContain('content');
+    });
+
+    it('includes import_dns_zone with records as required', async () => {
+      const result = await listTools(server);
+      const tool = result.tools.find((t) => t.name === 'import_dns_zone');
+      expect(tool).toBeDefined();
+      const schema = tool?.inputSchema as { required?: string[] };
+      expect(schema.required).toContain('records');
+    });
+
+    it('all tools have a name, description, and inputSchema', async () => {
+      const result = await listTools(server);
+      for (const tool of result.tools) {
+        expect(typeof tool.name).toBe('string');
+        expect(tool.name.length).toBeGreaterThan(0);
+        expect(typeof tool.description).toBe('string');
+        expect(tool.description.length).toBeGreaterThan(0);
+        expect(tool.inputSchema).toBeDefined();
+      }
     });
   });
 
