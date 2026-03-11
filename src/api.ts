@@ -101,7 +101,9 @@ const accountApi = async (endpoint: string) => {
   clearTimeout(timeoutId);
 
   if (!response.ok) {
-    throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}`);
+    const body = await response.text().catch(() => '');
+    const bodyInfo = body ? ` - ${body}` : '';
+    throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}${bodyInfo}`);
   }
 
   return response;
@@ -201,11 +203,14 @@ export const CloudflareApi = {
   // List all zones on the account
   listZones: async (): Promise<Zone[]> => {
     const response = await accountApi('zones');
+    const text = await response.text();
     let rawData: unknown;
     try {
-      rawData = await response.json();
+      rawData = JSON.parse(text);
     } catch {
-      throw new Error('Failed to parse Cloudflare zones response as JSON');
+      throw new Error(
+        `Failed to parse Cloudflare zones response as JSON: ${text.slice(0, 200)}`,
+      );
     }
     const data = CloudflareZonesApiResponse.parse(rawData);
     if (!data.success) {

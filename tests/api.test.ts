@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Helper to build a mock Response object
-const mockResponse = (body: unknown, ok = true, status = 200, statusText = 'OK') => ({
-  ok,
-  status,
-  statusText,
-  json: vi.fn().mockResolvedValue(body),
-});
+// Helper to build a mock Response object.
+// Provides both .json() (used by api/parseApiResponse) and .text() (used by accountApi/listZones).
+const mockResponse = (body: unknown, ok = true, status = 200, statusText = 'OK') => {
+  const bodyStr = JSON.stringify(body);
+  return {
+    ok,
+    status,
+    statusText,
+    text: vi.fn().mockResolvedValue(bodyStr),
+    json: vi.fn().mockResolvedValue(body),
+  };
+};
 
 const VALID_ID = 'abcdef0123456789abcdef0123456789';
 
@@ -636,11 +641,49 @@ describe('CloudflareApi', () => {
     it('throws when response body is not valid JSON', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected token')),
+        status: 200,
+        statusText: 'OK',
+        text: vi.fn().mockResolvedValue('not-json'),
       });
       await expect(CloudflareApi.listZones()).rejects.toThrow(
         'Failed to parse Cloudflare zones response as JSON',
       );
+    });
+
+    it('includes raw response text in error when body is not valid JSON', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: vi.fn().mockResolvedValue('<html>Bad Gateway</html>'),
+      });
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      expect(err.message).toContain('Failed to parse Cloudflare zones response as JSON');
+      expect(err.message).toContain('Bad Gateway');
+    });
+
+    it('includes HTTP status and body in error when accountApi returns non-ok response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: vi.fn().mockResolvedValue('{"errors":[{"code":9103,"message":"access denied"}]}'),
+      });
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      expect(err.message).toContain('403');
+      expect(err.message).toContain('access denied');
+    });
+
+    it('does not replace HTTP error with JSON parse error message', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: vi.fn().mockResolvedValue('Unauthorized'),
+      });
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      expect(err.message).toContain('401');
+      expect(err.message).not.toBe('Failed to parse Cloudflare zones response as JSON');
     });
   });
 
