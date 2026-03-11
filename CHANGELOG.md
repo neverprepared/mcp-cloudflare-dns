@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.1.1...v1.2.0) (2026-03-11)
+
+
+### Features
+
+* add DNS zone export and import tools ([2e3f644](https://github.com/neverprepared/mcp-cloudflare-dns/commit/2e3f6445dfc275eb2c968246a40fb6dc662e31f9))
+* add DNS zone export and import tools ([cfba97a](https://github.com/neverprepared/mcp-cloudflare-dns/commit/cfba97a27b273fbd4f883f3ce19c012da546d1c0))
+* add SRV and CAA record data validation ([85a7a81](https://github.com/neverprepared/mcp-cloudflare-dns/commit/85a7a812567e57f464c080efd6cb0ba46df4b9c0))
+* add SRV and CAA record data validation ([3c645aa](https://github.com/neverprepared/mcp-cloudflare-dns/commit/3c645aae91dd08e1a3fd93817fbbf3fb1e1c7a1e))
+
+
+### Bug Fixes
+
+* audit MCP server — fix broken handlers, SRV/CAA data, error wrapping, README ([71ccc97](https://github.com/neverprepared/mcp-cloudflare-dns/commit/71ccc97efaa2569980d11d9975ddae3dc2ab57b3))
+* import CreateDnsRecordRequest, preserve SRV/CAA data, fix HTTP error wrapping ([5551a3d](https://github.com/neverprepared/mcp-cloudflare-dns/commit/5551a3d305528b9150afd8a8009355e05718e5bf))
+
 ## [1.1.1](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.1.0...v1.1.1) (2026-03-08)
 
 
