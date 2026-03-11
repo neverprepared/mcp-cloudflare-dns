@@ -86,24 +86,25 @@ const accountApi = async (endpoint: string) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
 
+  let response: Response;
   try {
     const url = `https://api.cloudflare.com/client/v4/${endpoint}`;
-    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
-
-    if (!response.ok) {
-      throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}`);
-    }
-
-    return response;
+    response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
   } catch (error) {
+    clearTimeout(timeoutId);
     if (error instanceof Error) {
       if (error.name === 'AbortError') throw new Error('Cloudflare API request timed out');
       throw new Error(`Cloudflare API error: ${error.message}`);
     }
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
+  clearTimeout(timeoutId);
+
+  if (!response.ok) {
+    throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}`);
+  }
+
+  return response;
 };
 
 const api = async (
@@ -124,22 +125,17 @@ const api = async (
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
+  let response: Response;
   try {
     const url = `https://api.cloudflare.com/client/v4/zones/${resolvedZoneId}/${endpoint}`;
-
-    const response = await fetch(url, {
+    response = await fetch(url, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
-
-    if (!response.ok) {
-      throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}`);
-    }
-
-    return response;
   } catch (error) {
+    clearTimeout(timeoutId);
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
         throw new Error('Cloudflare API request timed out');
@@ -147,9 +143,14 @@ const api = async (
       throw new Error(`Cloudflare API error: ${error.message}`);
     }
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
+  clearTimeout(timeoutId);
+
+  if (!response.ok) {
+    throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}`);
+  }
+
+  return response;
 };
 
 // Shared helper: parse a fetch Response as JSON and validate with Zod schema.
@@ -199,9 +200,10 @@ export const CloudflareApi = {
 
   // List all zones on the account
   listZones: async (): Promise<Zone[]> => {
+    const response = await accountApi('zones');
     let rawData: unknown;
     try {
-      rawData = await (await accountApi('zones')).json();
+      rawData = await response.json();
     } catch {
       throw new Error('Failed to parse Cloudflare zones response as JSON');
     }

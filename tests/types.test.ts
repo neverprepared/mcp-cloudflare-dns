@@ -73,6 +73,18 @@ describe('CloudflareDnsRecord', () => {
     const result = CloudflareDnsRecord.parse({ ...validRecord, meta: {} });
     expect(result.meta).toEqual({});
   });
+
+  it('preserves the data field for SRV records returned by the API', () => {
+    const srvData = { priority: 10, weight: 20, port: 5060, target: 'sip.example.com' };
+    const result = CloudflareDnsRecord.parse({ ...validRecord, type: 'SRV', content: '', data: srvData });
+    expect(result.data).toMatchObject(srvData);
+  });
+
+  it('preserves the data field for CAA records returned by the API', () => {
+    const caaData = { flags: 0, tag: 'issue', value: 'letsencrypt.org' };
+    const result = CloudflareDnsRecord.parse({ ...validRecord, type: 'CAA', content: '', data: caaData });
+    expect(result.data).toMatchObject(caaData);
+  });
 });
 
 describe('CloudflareApiResponse', () => {

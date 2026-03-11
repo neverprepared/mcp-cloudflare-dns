@@ -3,6 +3,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { z } from 'zod';
 import { CloudflareApi } from './api.js';
 import {
+  CreateDnsRecordRequest,
   CreateDnsRecordShape,
   DnsRecordType,
   UpdateDnsRecordShape,
