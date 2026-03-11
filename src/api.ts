@@ -201,16 +201,47 @@ export const CloudflareApi = {
   // List all zones on the account
   listZones: async (): Promise<Zone[]> => {
     const response = await accountApi('zones');
+
+    let bodyText: string;
+    try {
+      bodyText = await response.text();
+    } catch {
+      throw new Error(
+        `Cloudflare API error: could not read zones response body (HTTP ${response.status})`,
+      );
+    }
+
+    // Defensive non-ok check — accountApi already handles this, but re-checking
+    // here lets us surface the response body in the error message.
+    if (!response.ok) {
+      throw new Error(
+        `Cloudflare API error: ${response.status} ${response.statusText}: ${bodyText.slice(0, 200)}`,
+      );
+    }
+
     let rawData: unknown;
     try {
-      rawData = await response.json();
+      rawData = JSON.parse(bodyText);
     } catch {
-      throw new Error('Failed to parse Cloudflare zones response as JSON');
+      throw new Error(
+        `Failed to parse Cloudflare zones response as JSON (HTTP ${response.status}): ${bodyText.slice(0, 200)}`,
+      );
     }
-    const data = CloudflareZonesApiResponse.parse(rawData);
+
+    let data: z.infer<typeof CloudflareZonesApiResponse>;
+    try {
+      data = CloudflareZonesApiResponse.parse(rawData);
+    } catch (parseError) {
+      console.error('Zones API response parsing failed:', parseError);
+      throw new Error(
+        `Failed to parse Cloudflare zones API response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`,
+      );
+    }
+
     if (!data.success) {
       throw new Error(sanitizeApiErrors(data.errors));
     }
+
     return data.result ?? [];
   },
 

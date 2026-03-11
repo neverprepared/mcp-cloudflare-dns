@@ -6,6 +6,7 @@ const mockResponse = (body: unknown, ok = true, status = 200, statusText = 'OK')
   status,
   statusText,
   json: vi.fn().mockResolvedValue(body),
+  text: vi.fn().mockResolvedValue(typeof body === 'string' ? body : JSON.stringify(body)),
 });
 
 const VALID_ID = 'abcdef0123456789abcdef0123456789';
@@ -636,11 +637,77 @@ describe('CloudflareApi', () => {
     it('throws when response body is not valid JSON', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected token')),
+        status: 200,
+        statusText: 'OK',
+        text: vi.fn().mockResolvedValue('this is not json'),
       });
       await expect(CloudflareApi.listZones()).rejects.toThrow(
         'Failed to parse Cloudflare zones response as JSON',
       );
+    });
+
+    it('includes HTTP status code in JSON parse error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: vi.fn().mockResolvedValue('<html>Bad Gateway</html>'),
+      });
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      expect(err.message).toContain('HTTP 200');
+    });
+
+    it('includes response body snippet in JSON parse error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: vi.fn().mockResolvedValue('<html>Bad Gateway</html>'),
+      });
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      expect(err.message).toContain('<html>Bad Gateway</html>');
+    });
+
+    it('truncates long response bodies in JSON parse error to 200 chars', async () => {
+      const longBody = 'x'.repeat(500);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: vi.fn().mockResolvedValue(longBody),
+      });
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      // The body snippet in the message should be at most 200 chars of the body
+      const snippetStart = err.message.indexOf('): ') + 3;
+      expect(err.message.slice(snippetStart).length).toBeLessThanOrEqual(200);
+    });
+
+    it('throws a schema error when JSON does not match expected zones shape', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: vi.fn().mockResolvedValue(JSON.stringify({ unexpected: true })),
+      });
+      await expect(CloudflareApi.listZones()).rejects.toThrow(
+        'Failed to parse Cloudflare zones API response:',
+      );
+    });
+
+    it('logs a console.error when the zones schema parse fails', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: vi.fn().mockResolvedValue(JSON.stringify({ unexpected: true })),
+      });
+      await CloudflareApi.listZones().catch(() => {});
+      expect(spy).toHaveBeenCalledWith(
+        'Zones API response parsing failed:',
+        expect.anything(),
+      );
+      spy.mockRestore();
     });
   });
 
