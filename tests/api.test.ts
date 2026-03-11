@@ -237,6 +237,13 @@ describe('CloudflareApi', () => {
       await expect(CloudflareApi.listDnsRecords()).rejects.toThrow('403');
     });
 
+    it('does not double-wrap the HTTP error message', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({}, false, 403, 'Forbidden'));
+      const err = await CloudflareApi.listDnsRecords().catch((e) => e);
+      // Should be "Cloudflare API error: 403 Forbidden", NOT "Cloudflare API error: Cloudflare API error: ..."
+      expect(err.message).not.toMatch(/Cloudflare API error:.*Cloudflare API error:/);
+    });
+
     it('throws a timeout error when request is aborted', async () => {
       vi.useFakeTimers();
       mockFetch.mockImplementationOnce(
@@ -472,6 +479,13 @@ describe('CloudflareApi', () => {
     it('throws when fetch fails', async () => {
       mockFetch.mockRejectedValueOnce(new Error('network error'));
       await expect(CloudflareApi.listZones()).rejects.toThrow();
+    });
+
+    it('propagates the original API error (not a JSON parse error) on network failure', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('network error'));
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      expect(err.message).not.toContain('Failed to parse Cloudflare zones response as JSON');
+      expect(err.message).toContain('network error');
     });
   });
 

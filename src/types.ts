@@ -28,6 +28,8 @@ export const CloudflareDnsRecord = z.object({
   proxied: z.boolean().optional(),
   ttl: z.number(),
   priority: z.number().optional(),
+  // Structured data for SRV and CAA records returned by the Cloudflare API
+  data: z.union([SrvData, CaaData, z.record(z.string(), z.unknown())]).optional(),
   created_on: z.string(),
   modified_on: z.string(),
   meta: z

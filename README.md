@@ -19,9 +19,9 @@ A Model Context Protocol server implementation for Cloudflare DNS that enables A
 
 1. Go to [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens)
 2. Click "Create Token"
-3. Use the "Zone:Edit" template or create a custom token with:
-   - Zone:Read
-   - Zone:Edit
+3. Use the "Edit zone DNS" template or create a custom token with:
+   - Zone:Read (to use `list_zones`)
+   - DNS:Edit (to create, update, and delete DNS records)
 4. Copy your API token
 
 ### 2. Get Zone ID
@@ -65,20 +65,32 @@ npx -y @neverprepared/mcp-cloudflare-dns
 
 ## Available Tools
 
+### `list_zones`
+List all Cloudflare zones (domains) on the account. Use this to discover zone IDs when
+working with a domain by name.
+
 ### `list_dns_records`
-List all DNS records or filter by name/type.
+List all DNS records for a zone, with optional filters for record name and type.
 
 ### `get_dns_record`
 Get detailed information about a specific DNS record by ID.
 
 ### `create_dns_record`
 Create a new DNS record with specified type, name, and content.
+SRV and CAA records accept a structured `data` object instead of a `content` string.
 
 ### `update_dns_record`
-Update an existing DNS record by ID.
+Update an existing DNS record by ID. All fields except `recordId` are optional.
 
 ### `delete_dns_record`
 Delete a DNS record by ID.
+
+### `export_dns_zone`
+Export all DNS records for a zone as a JSON array. Useful for backups and bulk operations.
+
+### `import_dns_zone`
+Bulk-import DNS records from a JSON array. Returns a success/failure summary with
+per-record partial failure handling.
 
 ## Supported DNS Record Types
 
