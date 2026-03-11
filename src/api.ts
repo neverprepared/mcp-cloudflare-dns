@@ -208,9 +208,7 @@ export const CloudflareApi = {
     try {
       rawData = JSON.parse(text);
     } catch {
-      throw new Error(
-        `Failed to parse Cloudflare zones response as JSON: ${text.slice(0, 200)}`,
-      );
+      throw new Error(`Failed to parse Cloudflare zones response as JSON: ${text.slice(0, 200)}`);
     }
     const data = CloudflareZonesApiResponse.parse(rawData);
     if (!data.success) {
