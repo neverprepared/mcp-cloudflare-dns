@@ -59,9 +59,9 @@ const parseEnv = () => {
     })
     .safeParse(process.env);
 
-  if (parsed.success && parsed.data.CLOUDFLARE_API_TOKEN && parsed.data.CLOUDFLARE_ZONE_ID) {
+  if (parsed.success && parsed.data.CLOUDFLARE_API_TOKEN) {
     cloudflareConfig.apiToken = parsed.data.CLOUDFLARE_API_TOKEN;
-    cloudflareConfig.zoneId = parsed.data.CLOUDFLARE_ZONE_ID;
+    cloudflareConfig.zoneId = parsed.data.CLOUDFLARE_ZONE_ID ?? '';
     cloudflareConfig.email = parsed.data.CLOUDFLARE_EMAIL;
   }
 };
