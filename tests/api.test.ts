@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Helper to build a mock Response object
-const mockResponse = (body: unknown, ok = true, status = 200, statusText = 'OK') => ({
+// Helper to build a mock Response object.
+// Both json() and text() are mocked so tests can exercise either read path.
+const mockResponse = (body: unknown, ok = true, status = 200, statusText = 'OK', textOverride?: string) => ({
   ok,
   status,
   statusText,
   json: vi.fn().mockResolvedValue(body),
+  text: vi.fn().mockResolvedValue(
+    textOverride ?? (typeof body === 'string' ? body : JSON.stringify(body)),
+  ),
 });
 
 const VALID_ID = 'abcdef0123456789abcdef0123456789';
@@ -721,6 +725,81 @@ describe('CloudflareApi', () => {
     it('re-throws non-Error exceptions from accountApi fetch', async () => {
       mockFetch.mockRejectedValueOnce('raw network failure');
       await expect(CloudflareApi.listZones()).rejects.toBe('raw network failure');
+    });
+  });
+
+  // ── accountApi body text in HTTP errors ───────────────────────────────────
+
+  describe('accountApi body text in HTTP errors', () => {
+    it('includes Cloudflare response body in the error when zones returns non-ok', async () => {
+      const cfErrorBody = JSON.stringify({
+        success: false,
+        errors: [{ code: 7003, message: 'Could not route to /zones' }],
+        messages: [],
+        result: null,
+      });
+      mockFetch.mockResolvedValueOnce(mockResponse({}, false, 403, 'Forbidden', cfErrorBody));
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      expect(err.message).toContain('403');
+      expect(err.message).toContain('Could not route to /zones');
+    });
+
+    it('error message still contains status code when body read fails', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        json: vi.fn().mockResolvedValue({}),
+        text: vi.fn().mockRejectedValue(new Error('stream already consumed')),
+      });
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      expect(err.message).toContain('401');
+      // Body couldn't be read — message should not mention the internal error
+      expect(err.message).not.toContain('stream already consumed');
+    });
+  });
+
+  // ── api() body text in HTTP errors (via DNS record methods) ───────────────
+
+  describe('api body text in HTTP errors', () => {
+    it('includes Cloudflare response body in the error for DNS record methods', async () => {
+      const cfErrorBody = 'access denied by Cloudflare firewall';
+      mockFetch.mockResolvedValueOnce(mockResponse({}, false, 403, 'Forbidden', cfErrorBody));
+      const err = await CloudflareApi.listDnsRecords().catch((e) => e);
+      expect(err.message).toContain('403');
+      expect(err.message).toContain('access denied by Cloudflare firewall');
+    });
+
+    it('error message contains status code when body is empty', async () => {
+      mockFetch.mockResolvedValueOnce(mockResponse({}, false, 429, 'Too Many Requests', ''));
+      const err = await CloudflareApi.listDnsRecords().catch((e) => e);
+      expect(err.message).toContain('429');
+    });
+  });
+
+  // ── listZones schema validation vs JSON parse errors ─────────────────────
+
+  describe('listZones schema validation errors', () => {
+    it('throws a schema validation error (not a JSON parse error) when JSON is valid but schema invalid', async () => {
+      mockFetch.mockResolvedValueOnce(
+        mockResponse({ not_a_zones_response: true }),
+      );
+      const err = await CloudflareApi.listZones().catch((e) => e);
+      // Must NOT look like a JSON parse failure
+      expect(err.message).not.toBe('Failed to parse Cloudflare zones response as JSON');
+      // Must indicate a schema/parse issue
+      expect(err.message).toContain('Failed to parse Cloudflare zones response:');
+    });
+
+    it('logs schema validation failure to console.error', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockFetch.mockResolvedValueOnce(mockResponse({ not_a_zones_response: true }));
+      await CloudflareApi.listZones().catch(() => {});
+      expect(spy).toHaveBeenCalledWith(
+        'Zones API response schema validation failed:',
+        expect.anything(),
+      );
+      spy.mockRestore();
     });
   });
 

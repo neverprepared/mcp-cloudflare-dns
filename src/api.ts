@@ -101,7 +101,14 @@ const accountApi = async (endpoint: string) => {
   clearTimeout(timeoutId);
 
   if (!response.ok) {
-    throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}`);
+    let body = '';
+    try {
+      body = await response.text();
+    } catch {
+      // body unavailable; proceed without it
+    }
+    const detail = body ? ` — ${body}` : '';
+    throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}${detail}`);
   }
 
   return response;
@@ -147,7 +154,14 @@ const api = async (
   clearTimeout(timeoutId);
 
   if (!response.ok) {
-    throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}`);
+    let body = '';
+    try {
+      body = await response.text();
+    } catch {
+      // body unavailable; proceed without it
+    }
+    const detail = body ? ` — ${body}` : '';
+    throw new Error(`Cloudflare API error: ${response.status} ${response.statusText}${detail}`);
   }
 
   return response;
@@ -201,13 +215,23 @@ export const CloudflareApi = {
   // List all zones on the account
   listZones: async (): Promise<Zone[]> => {
     const response = await accountApi('zones');
+    // Separate JSON parsing from schema validation so callers get a precise
+    // error message: a JSON syntax failure is distinct from a schema mismatch.
     let rawData: unknown;
     try {
       rawData = await response.json();
     } catch {
       throw new Error('Failed to parse Cloudflare zones response as JSON');
     }
-    const data = CloudflareZonesApiResponse.parse(rawData);
+    let data: ReturnType<typeof CloudflareZonesApiResponse.parse>;
+    try {
+      data = CloudflareZonesApiResponse.parse(rawData);
+    } catch (parseError) {
+      console.error('Zones API response schema validation failed:', parseError);
+      throw new Error(
+        `Failed to parse Cloudflare zones response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`,
+      );
+    }
     if (!data.success) {
       throw new Error(sanitizeApiErrors(data.errors));
     }
