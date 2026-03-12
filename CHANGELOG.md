@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.2.1...v1.2.2) (2026-03-12)
+
+
+### Bug Fixes
+
+* allow env-only config without requiring CLOUDFLARE_ZONE_ID ([2094610](https://github.com/neverprepared/mcp-cloudflare-dns/commit/209461055436bbb6f3db480046546daacc12cb3e))
+
 ## [1.2.1](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.2.0...v1.2.1) (2026-03-12)
 
 
