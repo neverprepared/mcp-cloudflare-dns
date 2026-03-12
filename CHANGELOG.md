@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.2.2...v1.2.3) (2026-03-12)
+
+
+### Bug Fixes
+
+* **types:** use permissive schema for delete response in deleteDnsRecord ([bcf8628](https://github.com/neverprepared/mcp-cloudflare-dns/commit/bcf8628e59565044fe8eaed128479f4a69381cc1))
+
 ## [1.2.2](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.2.1...v1.2.2) (2026-03-12)
 
 
