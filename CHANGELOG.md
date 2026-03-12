@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.2.0...v1.2.1) (2026-03-12)
+
+
+### Bug Fixes
+
+* include response body in HTTP errors, separate zones schema validation ([0026c69](https://github.com/neverprepared/mcp-cloudflare-dns/commit/0026c69162641a695f6b38f945bd00db88424d3c))
+* include response body in HTTP errors, separate zones schema validation ([4898c6c](https://github.com/neverprepared/mcp-cloudflare-dns/commit/4898c6c056cccb28674d2559566f39d33d8eb60e))
+
 ## [1.2.0](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.1.1...v1.2.0) (2026-03-11)
 
 
