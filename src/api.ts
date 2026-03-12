@@ -303,12 +303,23 @@ export const CloudflareApi = {
   // Delete a DNS record
   deleteDnsRecord: async (recordId: string, zoneId?: string): Promise<void> => {
     validateRecordId(recordId);
-    const data = await parseApiResponse(
-      await api(`dns_records/${recordId}`, 'DELETE', undefined, zoneId),
-    );
-
+    const response = await api(`dns_records/${recordId}`, 'DELETE', undefined, zoneId);
+    let rawData: unknown;
+    try {
+      rawData = await response.json();
+    } catch {
+      throw new Error('Failed to parse Cloudflare API response as JSON');
+    }
+    // Cloudflare DELETE returns {"result": {"id": "..."}} — use a permissive schema
+    // rather than CloudflareApiResponse which expects a full DnsRecord in result.
+    const DeleteResponse = z.object({
+      success: z.boolean(),
+      errors: z.array(z.object({ code: z.number(), message: z.string() })),
+      result: z.unknown().optional(),
+    });
+    const data = DeleteResponse.parse(rawData);
     if (!data.success) {
-      throw new Error(sanitizeApiErrors(data.errors));
+      throw new Error(sanitizeApiErrors(data.errors as { code: number; message: string }[]));
     }
   },
 
