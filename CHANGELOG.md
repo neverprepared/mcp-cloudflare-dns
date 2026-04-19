@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.2.3...v1.2.4) (2026-04-19)
+
+
+### Bug Fixes
+
+* move dotenv to dependencies so npx installs it ([5bb55fe](https://github.com/neverprepared/mcp-cloudflare-dns/commit/5bb55fe882ef1f51e45413269975a5b401672c0d))
+
 ## [1.2.3](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.2.2...v1.2.3) (2026-03-12)
 
 
