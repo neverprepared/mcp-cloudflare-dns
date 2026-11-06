@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.3.0...v1.3.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* a release-please tag cannot trigger the binary build ([#27](https://github.com/neverprepared/mcp-cloudflare-dns/issues/27)) ([bee0cc6](https://github.com/neverprepared/mcp-cloudflare-dns/commit/bee0cc64ab51bea1ace9dcbf7266ee93099a04a3))
+* **release:** macos-14 is no longer allocatable, and failed silently ([#29](https://github.com/neverprepared/mcp-cloudflare-dns/issues/29)) ([ac70bb4](https://github.com/neverprepared/mcp-cloudflare-dns/commit/ac70bb4733bf779e11e4e1e80913663f167b0420))
+
 ## [1.3.0](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.2.4...v1.3.0) (2026-11-06)
 
 
