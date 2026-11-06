@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.3.1...v1.3.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* **release:** never infer the tag from the ref ([#30](https://github.com/neverprepared/mcp-cloudflare-dns/issues/30)) ([0da800f](https://github.com/neverprepared/mcp-cloudflare-dns/commit/0da800f18a6f43bf3cc154eb9ebfffecaae76ecd))
+
 ## [1.3.1](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.3.0...v1.3.1) (2026-11-06)
 
 
