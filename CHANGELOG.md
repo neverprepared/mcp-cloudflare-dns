@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.2.4...v1.3.0) (2026-11-06)
+
+
+### Features
+
+* distribute a compiled binary via GitHub releases + Homebrew, not npm ([#26](https://github.com/neverprepared/mcp-cloudflare-dns/issues/26)) ([603615a](https://github.com/neverprepared/mcp-cloudflare-dns/commit/603615aec6e282dd2be1209d8dd12b109ebc56fc))
+
 ## [1.2.3](https://github.com/neverprepared/mcp-cloudflare-dns/compare/v1.2.2...v1.2.3) (2026-03-12)
 
 
