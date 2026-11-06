@@ -10,10 +10,15 @@ name: release
 # `depends_on :macos`), so the gateway bakes the linux tarball instead. Adapted
 # from neverprepared/mcp-kroki, which already distributes this way.
 
+# Triggers: called by release-please.yml once it has created a release, or
+# dispatched by hand against a tag to backfill assets.
+#
+# NOT `push: tags`. release-please creates the tag with the default
+# GITHUB_TOKEN, and GitHub deliberately does not fire workflows from events
+# raised by that token — so a tag trigger here would silently never run. The
+# release would appear, with no binaries attached.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
   workflow_dispatch:
 
 permissions:
