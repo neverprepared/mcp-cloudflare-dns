@@ -18,12 +18,22 @@ name: release
 # raised by that token — so a tag trigger here would silently never run. The
 # release would appear, with no binaries attached.
 on:
+  # The tag is REQUIRED on both paths and is never inferred from the ref.
+  # It used to fall back to github.ref_name, which on the workflow_call path is
+  # the CALLER's ref - main - so a release-please run published a GitHub release
+  # literally named "main" and rewrote the Homebrew formula to version "main",
+  # while the real tag got no assets at all.
   workflow_call:
+    inputs:
+      tag:
+        description: "Tag to build and attach assets to"
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to build and attach assets to (defaults to the ref)"
-        required: false
+        description: "Tag to build and attach assets to (e.g. v1.2.3)"
+        required: true
         type: string
 
 permissions:
@@ -39,11 +49,21 @@ jobs:
     # of flakiness.
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ inputs.tag || github.ref_name }}
+      TAG: ${{ inputs.tag }}
     steps:
+      - name: Refuse a ref that is not a version tag
+        # Cheap insurance against the failure this workflow already caused once:
+        # a bad TAG does not error, it publishes a release and a formula under
+        # the wrong name while the real release silently gets no assets.
+        run: |
+          case "$TAG" in
+            v[0-9]*) : ;;
+            *) echo "refusing to build: TAG=$TAG is not a version tag" >&2; exit 1 ;;
+          esac
+
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ inputs.tag }}
 
       - uses: oven-sh/setup-bun@v2
         with:
