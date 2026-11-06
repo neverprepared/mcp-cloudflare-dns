@@ -53,13 +53,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
-          scope: "@neverprepared"
-
-      - name: Publish to npm
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+  # The binaries + Homebrew formula. Called rather than tag-triggered: the tag
+  # release-please creates is made with the default GITHUB_TOKEN, and GitHub
+  # does not fire workflows from that token's events, so a `push: tags` trigger
+  # would never run and the release would carry no assets.
+  binaries:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/release.yaml
+    secrets: inherit
