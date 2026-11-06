@@ -1,9 +1,15 @@
 name: Publish to npm
 
+# DISABLED as an automatic trigger. We no longer publish to npmjs.org — a v*
+# tag now builds a self-contained binary, attaches it to the GitHub release and
+# renders the Homebrew formula (see release.yaml). Leaving this on `push: tags`
+# would race that workflow on the very same tag.
+#
+# The workflow itself is kept rather than deleted, along with package.json, so
+# the npm route stays documented and one dispatch away if it is ever wanted.
+# Note it needs an NPM_TOKEN that is currently rejected by the registry.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 jobs:
   publish:
