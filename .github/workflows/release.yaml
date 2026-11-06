@@ -20,15 +20,30 @@ name: release
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and attach assets to (defaults to the ref)"
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   release:
-    runs-on: macos-14 # Apple Silicon (arm64)
+    # ubuntu, not a pinned macOS image. The macos-14 label stopped being
+    # allocatable and failed SILENTLY: the job was created and cancelled one
+    # second later having run zero steps, with no error recorded anywhere.
+    # Nothing in this job needs macOS — bun cross-compiles all three targets
+    # and there is no code signing — so a Linux runner removes that whole class
+    # of flakiness.
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -49,19 +64,19 @@ jobs:
       - name: Resolve version + checksum
         id: meta
         run: |
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          echo "sha256=$(shasum -a 256 mcp-cloudflare-dns_darwin_arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum mcp-cloudflare-dns_darwin_arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           assets="mcp-cloudflare-dns_darwin_arm64.tar.gz mcp-cloudflare-dns_linux_arm64.tar.gz mcp-cloudflare-dns_linux_amd64.tar.gz"
-          gh release create "${GITHUB_REF_NAME}" $assets \
+          gh release create "${TAG}" $assets \
             --repo "${GITHUB_REPOSITORY}" \
-            --title "${GITHUB_REF_NAME}" \
+            --title "${TAG}" \
             --generate-notes || \
-          gh release upload "${GITHUB_REF_NAME}" $assets \
+          gh release upload "${TAG}" $assets \
             --repo "${GITHUB_REPOSITORY}" --clobber
 
       - name: Render + push Homebrew formula
